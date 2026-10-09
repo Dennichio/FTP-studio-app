@@ -1,0 +1,51 @@
+{
+  "name": "ftp-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Geïntegreerde Windows-werkplek voor webontwikkeling en veilige bestandsoverdracht",
+  "author": "FTP Studio",
+  "license": "MIT",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:offline": "node --no-warnings scripts/offline-check.mjs",
+    "test:queue:offline": "node --no-warnings scripts/verify-queue-offline.mjs",
+    "test:desktop": "npm run build && playwright test --config playwright.config.ts",
+    "dev": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win zip --x64",
+    "dist:linux": "npm run build && electron-builder --linux dir --x64"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.5",
+    "ssh2-sftp-client": "^12.0.1",
+    "monaco-editor": "^0.55.1",
+    "parse5": "^8.0.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/ssh2-sftp-client": "^9.0.5",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "@playwright/test": "^1.58.0"
+  },
+  "build": {
+    "appId": "nl.ftpstudio.desktop",
+    "productName": "FTP Studio",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "package.json"],
+    "asar": true,
+    "win": { "target": ["zip"], "signAndEditExecutable": false },
+    "artifactName": "FTP-Studio-${version}-${os}-${arch}.${ext}"
+  }
+}
