@@ -44,7 +44,7 @@ const editableText = (text: string) => text.startsWith('\uFEFF') ? text.slice(1)
 export interface CodeEditorHandle { insert(text: string): void; reveal(start: number, end?: number): void; revealLine(line: number): void; }
 interface EditorProps {
   documentId: string; path: string; content: string; eol: 'LF' | 'CRLF'; settings: AppSettings;
-  onChange: (content: string) => void; onCursor: (offset: number, line: number, column: number) => void; onSave: () => void;
+  onChange: (content: string) => void; onCursor: (offset: number, line: number, column: number) => void; onSave: () => void; onSaveAs: () => void;
 }
 export const CodeEditor = forwardRef<CodeEditorHandle, EditorProps>((p, ref) => {
   const container = useRef<HTMLDivElement>(null), editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -63,6 +63,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, EditorProps>((p, ref) => 
       tabSize: 2, wordWrap: callbacks.current.settings.wordWrap ? 'on' : 'off', fixedOverflowWidgets: true });
     editor.current = ed;
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => callbacks.current.onSave());
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS, () => callbacks.current.onSaveAs());
     const cursor = ed.onDidChangeCursorPosition(e => { const m = ed.getModel(); if (m) callbacks.current.onCursor(m.getOffsetAt(e.position)+(value(m).startsWith('\uFEFF')?1:0), e.position.lineNumber, e.position.column); });
     return () => { const current=models.get(callbacks.current.documentId);if(current)current.view=ed.saveViewState();cursor.dispose();ed.setModel(null);ed.dispose();editor.current=null;model.current=null; };
   }, []);
@@ -76,7 +77,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, EditorProps>((p, ref) => 
     } else if (value(cached.model) !== p.content) {
       cached.model.pushEditOperations([], [{ range: cached.model.getFullModelRange(), text: editableText(p.content) }], () => null);
     }
-    const current = cached, m = current.model; ed.setModel(m); model.current = m;
+    const current = cached, m = current.model;monaco.editor.setModelLanguage(m,language(p.path)); ed.setModel(m); model.current = m;
     if (current.view) ed.restoreViewState(current.view);
     const sub = m.onDidChangeContent(() => callbacks.current.onChange(value(m)));
     return () => { if(editor.current===ed)current.view=ed.saveViewState(); sub.dispose(); if(editor.current===ed)ed.setModel(null); if (model.current === m) model.current = null; };

@@ -15,7 +15,11 @@
     "test:desktop": "npm run build && playwright test --config playwright.config.ts",
     "dev": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win zip --x64",
-    "dist:linux": "npm run build && electron-builder --linux dir --x64"
+    "dist:linux": "npm run build && electron-builder --linux dir --x64",
+    "test:search:offline": "node --no-warnings scripts/verify-search-offline.mjs",
+    "test:connections:offline": "node --no-warnings scripts/verify-protocol-manager-offline.mjs",
+    "benchmark:transfers": "node --no-warnings scripts/benchmark-transfers.mts",
+    "test:permissions:offline": "node --no-warnings scripts/verify-workspace-permissions-offline.mjs"
   },
   "dependencies": {
     "basic-ftp": "^5.0.5",
@@ -42,10 +46,20 @@
   "build": {
     "appId": "nl.ftpstudio.desktop",
     "productName": "FTP Studio",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
     "asar": true,
-    "win": { "target": ["zip"], "signAndEditExecutable": false },
+    "win": {
+      "target": [
+        "zip"
+      ],
+      "signAndEditExecutable": false
+    },
     "artifactName": "FTP-Studio-${version}-${os}-${arch}.${ext}"
   }
 }

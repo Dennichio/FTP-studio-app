@@ -6,3 +6,12 @@
 .preview-warning{padding:6px 10px;font-size:9px;background:#383323;color:#c6b789;border-bottom:1px solid #53472d}.theme-light .preview-warning{background:#fff2d8;color:#856229}
 
 .block-palette{border-top:1px solid #334862;padding-top:7px;margin-top:12px}.block-palette p{font-size:9px;line-height:1.6;margin:0 0 9px}.block-palette>div:last-child{display:grid;grid-template-columns:1fr 1fr;gap:5px}.block-palette button{justify-content:flex-start;font-size:9px!important;padding:6px 5px!important;background:#23364f;border-color:#365170}.dom-node[draggable=true]{cursor:grab}.dom-node[draggable=true]:active{cursor:grabbing}
+
+.file-row{height:27px;grid-template-columns:minmax(125px,1fr) 55px 65px 148px 40px;min-width:465px}.file-row.table-head{height:25px}.queue-filter select{width:180px;font-size:9px;padding:3px 5px;height:22px}.file-row>span{overflow:hidden;text-overflow:ellipsis}.file-table[aria-busy=true] .file-row:not(.table-head){opacity:.55;pointer-events:none}
+@media(max-width:1200px){.file-row{grid-template-columns:minmax(105px,1fr) 48px 55px 145px 32px;min-width:420px}}
+
+.panel-controls{height:26px;display:flex;align-items:center;gap:4px;padding:0 12px;background:#152030;border-bottom:1px solid #2b3e56;flex-shrink:0}.panel-controls>span:first-child{font-size:8px;letter-spacing:1px;color:#547295;margin-right:9px}.panel-controls button{font-size:9px;padding:3px 5px;gap:5px;border:0;background:transparent;color:#7999c0}.panel-controls button:hover{background:#263d5a;color:#c4dafa}.panel-controls .toolbar-separator{height:12px;margin:0 5px}.file-browsers.maximized{flex:1;height:0!important;max-height:none}.editor-panel-wrapper{flex:1;display:flex;min-height:150px;overflow:hidden}.editor-panel-wrapper>.editor-pane{width:100%}.queue-panel.maximized{flex:1;height:0!important;min-height:120px}.layout-options{display:grid;grid-template-columns:1fr;gap:9px}.layout-options button{justify-content:flex-start}
+
+.profile-actions{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}.profile-actions button{font-size:10px}.modal>footer button{font-size:11px}.theme-light .panel-controls{background:#e2eaf5}.theme-light .panel-controls button{color:#527299}
+
+.file-row[draggable=true]{cursor:grab}.file-row[draggable=true]:active{cursor:grabbing}

@@ -7,12 +7,14 @@ import { TransferQueue, endpointIdentity } from './queue';
 import { CredentialVault } from './storage';
 import { PreviewServer, mimeTypes } from './preview';
 import { PublishPlanner } from '../core/publishing';
-import { assertSafeLocalPath, listLocal, mutateLocal, readTextFile, safeSaveTextFile, matchesFilters, isDefaultExcluded, isSensitivePath, boundedRegex, searchProject, previewReplace, applyReplace, mapLocalToRemote } from '../core/workspace';
+import { assertSafeLocalPath, listLocal, mutateLocal, readTextFile, localSnapshot, safeSaveTextFile, matchesFilters, isDefaultExcluded, isSensitivePath, searchProject, previewReplace, applyReplace, mapLocalToRemote } from '../core/workspace';
 import { discoverDependencies } from '../core/source';
+import { searchRemoteEntries } from './remoteSearch';
 
 export const defaultSettings: AppSettings = { theme: 'dark', showHidden: false, syncNavigation: true, editorFontSize: 14, wordWrap: true, autoUpload: false };
 export interface NativeActions {
   chooseFolder(): Promise<string | null>; chooseFile(title?: string): Promise<string | null>;
+  chooseSaveFile(defaultPath: string): Promise<string | null>;
   confirm(title: string, message: string): Promise<boolean>;
   openBrowser(url: string, browser?: 'default' | 'edge' | 'chrome'): Promise<void>;
 }
@@ -79,14 +81,20 @@ export class StudioService {
   private upsert<T extends { id: string }>(key: string, value: T): T { const list = this.store.get<T[]>(key, []).filter(item => item.id !== value.id); list.push(value); this.store.set(key, list); return value; }
   private remove<T extends { id: string }>(key: string, id: string): void { this.store.set(key, this.store.get<T[]>(key, []).filter(item => item.id !== id)); }
   private recoveryList(): DocumentData[] { return this.store.get<DocumentData[]>('recoveries', []); }
-  private async openDocument(filename: string, connectionId?: string): Promise<DocumentData> {
-    const endpointKey = connectionId ? endpointIdentity(this.remote.profile(connectionId)) : undefined;
+  private checkEndpoint(connectionId: string, expected?: string): string {
+    const current = endpointIdentity(this.remote.profile(text(connectionId, 'Verbinding')));
+    if (expected !== undefined && expected !== current) throw new Error('De serverbestemming is gewijzigd. Vernieuw het paneel en voer de opdracht opnieuw uit.');
+    return current;
+  }
+  private async openDocument(filename: string, connectionId?: string, expectedEndpoint?: string): Promise<DocumentData> {
+    const endpointKey = connectionId ? this.checkEndpoint(connectionId, expectedEndpoint) : undefined;
     // Renderer owns open-tab reuse. A new open command must re-read actual disk/server
     // metadata, otherwise closing/reopening could silently return a stale workcache.
     const id = randomUUID(); let remote: DocumentData['remote']; let local = filename;
     if (connectionId) {
       const lease = await this.remote.acquire(connectionId, 'navigation');
       try {
+        this.checkEndpoint(connectionId, endpointKey);
         const original = await lease.session.stat(filename);
         if (!original || original.kind !== 'file' || original.size > 8 * 1024 * 1024) throw new Error('Serverbestand is geen tekstbestand tot 8 MB.');
         const directory = path.join(this.cacheRoot, id); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -118,6 +126,7 @@ export class StudioService {
       }
       case 'chooseFolder': result = await this.native.chooseFolder(); break;
       case 'chooseFile': result = await this.native.chooseFile(a.title); break;
+      case 'chooseSaveFile': result = await this.native.chooseSaveFile(text(a.defaultPath, 'Voorgestelde bestandsnaam')); break;
       case 'listLocal': result = await listLocal(text(a.path, 'Pad'), !!a.showHidden, a.filters ?? []); break;
       case 'mutateLocal': {
         if (a.operation === 'delete' && !await this.native.confirm('Lokaal verwijderen', `Definitief verwijderen: ${text(a.path, 'Pad')}?`)) break;
@@ -133,15 +142,19 @@ export class StudioService {
       case 'connect': this.remember(a.credentials); result = await this.remote.connect(plainProfile(a.profile), a.credentials && Object.values(a.credentials).some(Boolean) ? a.credentials : undefined); break;
       case 'disconnect': await this.queue.action('pause', this.queue.jobs().filter(j => j.connectionId === a.connectionId).map(j => j.id)); await this.remote.disconnect(text(a.connectionId, 'Verbinding')); break;
       case 'listRemote': case 'statRemote': {
+        const endpoint = this.checkEndpoint(a.connectionId, a.expectedEndpoint);
         const lease = await this.remote.acquire(text(a.connectionId, 'Verbinding'), 'navigation');
-        try { result = command === 'listRemote' ? await lease.session.list(text(a.path, 'Serverpad')) : await lease.session.stat(text(a.path, 'Serverpad')); this.log('debug', `Metadata gelezen: ${a.path}`, a.connectionId); } finally { await lease.release(); } break;
+        try { this.checkEndpoint(a.connectionId, endpoint); result = command === 'listRemote' ? await lease.session.list(text(a.path, 'Serverpad')) : await lease.session.stat(text(a.path, 'Serverpad')); this.checkEndpoint(a.connectionId, endpoint); this.log('debug', `Metadata gelezen: ${a.path}`, a.connectionId); } finally { await lease.release(); } break;
       }
       case 'mutateRemote': {
+        const endpoint = this.checkEndpoint(a.connectionId, a.expectedEndpoint);
         text(a.path, 'Serverpad'); const root = this.remote.profile(a.connectionId).remoteRoot;
         if (path.posix.normalize(a.path) === path.posix.normalize(root) && a.operation !== 'mkdir') throw new Error('De gekoppelde serverhoofdmap kan niet worden gewijzigd.');
-        if (['delete', 'chmod'].includes(a.operation) && !await this.native.confirm(a.operation === 'delete' ? 'Serverbestand verwijderen' : 'Serverrechten wijzigen', `${a.path}${a.mode ? ` → ${a.mode}` : ''}${a.recursive ? '\nInclusief alle onderliggende bestanden.' : ''}?`)) break;
+        if (['delete', 'chmod'].includes(a.operation) && !await this.native.confirm(a.operation === 'delete' ? 'Serverbestand verwijderen' : 'Serverrechten wijzigen', `${this.remote.profile(a.connectionId).host}: ${a.path}${a.mode ? ` → ${a.mode}` : ''}${a.recursive ? '\nInclusief alle onderliggende bestanden.' : ''}?`)) break;
+        this.checkEndpoint(a.connectionId, endpoint);
         const lease = await this.remote.acquire(a.connectionId, 'navigation');
         try {
+          this.checkEndpoint(a.connectionId, endpoint);
           if (a.operation === 'mkdir') await lease.session.mkdir(a.path);
           else if (a.operation === 'rename') await lease.session.rename(a.path, text(a.destination, 'Bestemming'));
           else if (a.operation === 'delete') {
@@ -177,30 +190,25 @@ export class StudioService {
         } finally { await lease.release(); } break;
       }
       case 'searchRemote': {
-        const controller = new AbortController(); this.searches.get(a.requestId)?.abort(); this.searches.set(text(a.requestId, 'Zoek-id'), controller);
-        const matcher = a.query.regex ? boundedRegex(a.query.text, a.query.caseSensitive ? '' : 'i') : null;
-        const needle = a.query.caseSensitive ? a.query.text : a.query.text.toLowerCase();
-        const entries: FileEntry[] = []; const pending = [text(a.root, 'Zoekmap')]; let scanned = 0;
-        try {
-          while (pending.length) {
-            controller.signal.throwIfAborted(); const folder = pending.pop()!; const lease = await this.remote.acquire(a.connectionId, 'navigation', controller.signal);
-            try { for (const entry of await lease.session.list(folder, controller.signal)) {
-              if (++scanned > 50000) throw new Error('Zoekopdracht overschrijdt 50.000 items; beperk de zoekmap.');
-              if (entry.kind === 'symlink') continue;
-              if (matcher ? matcher.test(entry.name) : (a.query.caseSensitive ? entry.name : entry.name.toLowerCase()).includes(needle)) entries.push(entry);
-              if (entry.kind === 'directory') pending.push(entry.path);
-            } } finally { await lease.release(); }
-          } result = entries;
-        } finally { this.searches.delete(a.requestId); } break;
+        const endpoint = this.checkEndpoint(a.connectionId, a.expectedEndpoint);
+        const requestId = text(a.requestId, 'Zoek-id', 128);
+        const controller = new AbortController(); this.searches.get(requestId)?.abort(); this.searches.set(requestId, controller);
+        try { result = await searchRemoteEntries(this.remote, a.connectionId, text(a.root, 'Zoekmap'), a.query, controller.signal, endpoint); }
+        finally { if (this.searches.get(requestId) === controller) this.searches.delete(requestId); }
+        break;
       }
       case 'cancelSearch': this.searches.get(a.requestId)?.abort(); break;
-      case 'openDocument': result = await this.openDocument(text(a.path, 'Pad'), a.connectionId); break;
+      case 'openDocument': result = await this.openDocument(text(a.path, 'Pad'), a.connectionId, a.expectedEndpoint); break;
       case 'saveDocument': {
         const doc = this.documents.get(a.id); if (!doc) throw new Error('Document is niet geopend.');
         const content = text(a.content, 'Document', 8 * 1024 * 1024);
         const target = a.path ? text(a.path, 'Opslagpad') : doc.path;
-        if (target !== doc.path && !await this.native.confirm('Opslaan als', `Document opslaan als ${target}? Een bestaand bestand wordt beschermd tegen overschrijven.`)) throw new Error('Opslaan geannuleerd.');
-        const file = await safeSaveTextFile(target, content, target === doc.path ? doc.original : null);
+        let expected = target === doc.path ? doc.original : null;
+        if (target !== doc.path) {
+          try { expected = await localSnapshot(target); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+          if (expected && !await this.native.confirm('Bestaand bestand vervangen', `${target} vervangen? De bestaande versie wordt als lokale reservekopie behouden.`)) throw new Error('Opslaan geannuleerd.');
+        }
+        const file = await safeSaveTextFile(target, content, expected);
         const updated: DocumentData = { ...doc, path: target, name: path.basename(target), content, original: file.snapshot, eol: file.eol, ...(target !== doc.path ? { remote: undefined } : {}) };
         this.documents.set(doc.id, updated); this.remove('recoveries', doc.id); result = structuredClone(updated); break;
       }

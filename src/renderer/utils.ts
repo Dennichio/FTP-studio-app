@@ -16,3 +16,6 @@ export function virtualRange(total:number,scrollTop:number,viewportHeight:number
   const start=Math.max(0,first-overscan),end=Math.min(count,first+visible+overscan);
   return {start,end,before:start*height,after:Math.max(0,count-end)*height};
 }
+
+export function formatDateTime(timestamp:number|null):string {return timestamp===null?'—':new Intl.DateTimeFormat('nl-NL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(timestamp)).replace(',','');}
+export function fileTypeLabel(file:FileEntry):string {return file.kind==='directory'?'Map':file.kind==='symlink'?'Koppeling':file.name.includes('.')?file.name.split('.').pop()!.toUpperCase():'Bestand';}

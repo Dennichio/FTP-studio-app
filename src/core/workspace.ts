@@ -99,12 +99,24 @@ async function backupLocation(target: string, label: string): Promise<string> {
 
 async function probeHardlink(source: string, directory: string): Promise<void> {
   const probe = path.join(directory, `.ftp-studio-${randomUUID()}.tmp`);
-  try { await fs.link(source, probe); } catch (error) { throw new Error(`Veilige bestandswissel vereist hardlinks op hetzelfde bestandssysteem: ${(error as NodeJS.ErrnoException).code ?? 'niet ondersteund'}.`); }
-  finally { await fs.rm(probe, { force: true }); }
+  let failure: unknown;
+  try { await fs.link(source, probe); } catch (error) {
+    failure = new Error(`Veilige bestandswissel vereist hardlinks op hetzelfde bestandssysteem: ${(error as NodeJS.ErrnoException).code ?? 'niet ondersteund'}.`, { cause: error });
+    throw failure;
+  } finally { await cleanupTemporary(probe, failure); }
 }
 
-async function restoreExclusive(backup: string, target: string): Promise<boolean> {
-  try { await assertSafeLocalPath(target, undefined, true); await fs.link(backup, target); return true; } catch { return false; }
+async function cleanupTemporary(target: string, primary?: unknown): Promise<void> {
+  try { await fs.rm(target, { force: true }); } catch (error) {
+    const cleanupMessage = `Tijdelijk bestand is behouden na opruimfout: ${target}.`;
+    if (primary !== undefined) throw new AggregateError([primary, error], `${primary instanceof Error ? primary.message : String(primary)} ${cleanupMessage}`, { cause: primary });
+    throw new Error(cleanupMessage, { cause: error });
+  }
+}
+
+async function restoreExclusive(backup: string, target: string): Promise<{ restored: true } | { restored: false; error: unknown }> {
+  try { await assertSafeLocalPath(target, undefined, true); await fs.link(backup, target); return { restored: true }; }
+  catch (error) { return { restored: false, error }; }
 }
 
 async function moveFileExclusive(source: string, destination: string): Promise<void> {
@@ -120,7 +132,10 @@ async function moveFileExclusive(source: string, destination: string): Promise<v
     await fs.link(backup, destination);
     // Keep the moved original as a recovery copy; never unlink a newly-created source pathname.
   } catch (error) {
-    if (moved && !await restoreExclusive(backup, source)) throw new Error(`Verplaatsen afgebroken; bron en bestemming zijn niet overschreven. Oorspronkelijk bestand behouden in ${backup}.`);
+    if (moved) {
+      const restored = await restoreExclusive(backup, source);
+      if (!restored.restored) throw new AggregateError([error, restored.error], `Verplaatsen afgebroken; bron en bestemming zijn niet overschreven. Oorspronkelijk bestand behouden in ${backup}.`, { cause: error });
+    }
     throw error;
   }
 }
@@ -193,37 +208,66 @@ export async function safeSaveTextFile(target: string, content: string, expected
   let backup: string | undefined;
   let originalMoved = false;
   let installed = false;
+  let failure: unknown;
+  let stageHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
   try {
-    const handle = await fs.open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, mode);
-    try {
-      await handle.writeFile(content, 'utf8');
-      // open(mode) is masked by process.umask; restore the intended POSIX mode explicitly.
-      await handle.chmod(mode);
-      await handle.sync();
-    } finally { await handle.close(); }
+    // Retain the owned inode through commit. A later pathname may belong to
+    // another writer and must never be chmod'ed as part of our recovery.
+    stageHandle = await fs.open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, mode);
+    await stageHandle.writeFile(content, 'utf8');
+    // open(mode) is masked by process.umask; restore the intended POSIX mode explicitly.
+    await stageHandle.chmod(mode);
+    await stageHandle.sync();
     await assertSafeLocalPath(safe, undefined, true);
     if (saveExpected) { const current = await localSnapshot(safe); if (!snapshotMatches(current, saveExpected)) throw new Error('Bestand is tijdens het opslaan gewijzigd.'); }
     // Verify support before taking the original out of the way.
     await probeHardlink(temp, path.dirname(safe));
     if (saveExpected) {
       backup = await backupLocation(safe, 'save');
+      const currentPermissions = await fs.lstat(safe);
+      if (!currentPermissions.isFile() || (currentPermissions.mode & 0o777) !== mode) throw new Error('Bestandsrechten zijn tijdens het opslaan gewijzigd; huidig bestand is behouden.');
       await fs.rename(safe, backup); originalMoved = true;
       if (!snapshotMatches(await localSnapshot(backup), saveExpected)) throw new Error('Bestand is tijdens de bestandswissel gewijzigd.');
+      const backupPermissions = await fs.lstat(backup);
+      if (!backupPermissions.isFile() || (backupPermissions.mode & 0o777) !== mode) throw new Error('Bestandsrechten zijn tijdens de bestandswissel gewijzigd; oorspronkelijke rechten worden behouden.');
     }
     await assertSafeLocalPath(safe, undefined, true);
     await fs.link(temp, safe); installed = true;
     const saved = await readTextFile(safe);
     if (saved.snapshot.checksum !== checksum(content)) throw new Error('Bestand is na installatie door een andere schrijver gewijzigd.');
     if (backup && saveExpected && !snapshotMatches(await localSnapshot(backup), saveExpected)) throw new Error('Oorspronkelijke bestand is tijdens het opslaan gewijzigd; reservekopie blijft behouden.');
+    if (backup) {
+      const finalPermissions = await fs.lstat(backup);
+      if (!finalPermissions.isFile() || (finalPermissions.mode & 0o777) !== mode) {
+        // A process holding the original inode can restrict it even after rename.
+        // Never report success or leave our inode broader than the detected mode.
+        const ownedPermissions = await stageHandle.stat();
+        await stageHandle.chmod((ownedPermissions.mode & 0o777) & (finalPermissions.isFile() ? finalPermissions.mode & 0o777 : 0o600));
+        await stageHandle.sync();
+        throw new Error('Bestandsrechten zijn tijdens de laatste opslagstap gewijzigd; de nieuwe versie is beperkt en de reservekopie is behouden.');
+      }
+    }
     return saved;
   } catch (error) {
+    failure = error;
     if (originalMoved && backup) {
       // Once installed, the destination may belong to another writer: do not remove it.
-      if (installed) throw new Error(`Opslaan vereist controle; huidig bestand is behouden. Oorspronkelijk bestand veilig in ${backup}.`);
-      if (!await restoreExclusive(backup, safe)) throw new Error(`Opslaan afgebroken; huidig bestand is behouden. Oorspronkelijk bestand veilig in ${backup}.`);
+      if (installed) failure = new Error(`Opslaan vereist controle; huidig bestand is behouden. Oorspronkelijk bestand veilig in ${backup}.`, { cause: error });
+      else {
+        const restored = await restoreExclusive(backup, safe);
+        if (!restored.restored) failure = new AggregateError([error, restored.error], `Opslaan afgebroken; huidig bestand is behouden. Oorspronkelijk bestand veilig in ${backup}.`, { cause: error });
+      }
     }
-    throw error;
-  } finally { await fs.rm(temp, { force: true }); }
+    throw failure;
+  } finally {
+    // Preserve the original failure and still clean up when closing fails.
+    let closeFailure: unknown;
+    try { await stageHandle?.close(); } catch (error) {
+      closeFailure = failure === undefined ? error : new AggregateError([failure, error], failure instanceof Error ? failure.message : 'Opslaan en sluiten mislukt.', { cause: failure });
+    }
+    await cleanupTemporary(temp, closeFailure ?? failure);
+    if (closeFailure !== undefined) throw closeFailure;
+  }
 }
 
 export async function walkProject(root: string, signal?: AbortSignal): Promise<FileEntry[]> {

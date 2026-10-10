@@ -11,7 +11,7 @@ afterEach(async () => { for (const f of fixtures.splice(0)) { await f.service.cl
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ftp-main-')), localRoot = path.join(root, 'project'); await fs.mkdir(localRoot);
   const store = new SqliteStore(path.join(root, 'data', 'state.db'));
-  const native: NativeActions = { chooseFile: vi.fn(async () => null), chooseFolder: vi.fn(async () => null), confirm: vi.fn(async () => true), openBrowser: vi.fn(async () => {}) };
+  const native: NativeActions = { chooseFile: vi.fn(async () => null), chooseSaveFile: vi.fn(async () => null), chooseFolder: vi.fn(async () => null), confirm: vi.fn(async () => true), openBrowser: vi.fn(async () => {}) };
   const service = new StudioService(store, new CredentialVault(store, { isEncryptionAvailable: () => false, encryptString: () => { throw Error('Unavailable'); }, decryptString: () => { throw Error('Unavailable'); } }), path.join(root, 'data'), native, () => {});
   const project: Project = { id: 'project', name: 'Test', localRoot, remoteRoot: '/site', profileId: 'connection', filters: { display: [], transfer: [], sync: [] }, environments: [], bookmarks: [] };
   await service.invoke('saveProject', { project }); fixtures.push({ root, store, service });
@@ -25,6 +25,13 @@ function remote(service: StudioService, localRoot: string, entries: Record<strin
 function entry(target: string, kind: FileEntry['kind']): FileEntry { return { name: path.posix.basename(target), path: target, kind, size: 0, modifiedAt: 1 }; }
 
 describe('desktop backend with isolated SQLite and filesystem', () => {
+  it('refuses destructive work when a profile is rebound while native confirmation is open', async () => {
+    const f = await fixture(); const session = remote(f.service, f.localRoot, { '/site/a.txt': entry('/site/a.txt', 'file') });
+    const profile = f.service.remote.profile('connection');
+    vi.mocked(f.native.confirm).mockImplementation(async () => { profile.host = 'another-server.invalid'; return true; });
+    await expect(f.service.invoke('mutateRemote', { connectionId: 'connection', operation: 'delete', path: '/site/a.txt' })).rejects.toThrow(/serverbestemming is gewijzigd/);
+    expect(session.remove).not.toHaveBeenCalled();
+  });
   it('preserves UTF-8 BOM/CRLF and rejects overwriting external modifications', async () => {
     const f = await fixture(), filename = path.join(f.localRoot, 'index.html'), original = '\uFEFF<p>one</p>\r\n'; await fs.writeFile(filename, original);
     const doc = await f.service.invoke('openDocument', { path: filename }); expect(doc.content).toBe(original); expect(doc.eol).toBe('CRLF');
@@ -37,6 +44,32 @@ describe('desktop backend with isolated SQLite and filesystem', () => {
     const f = await fixture(), filename = path.join(f.localRoot, 'index.html'); await fs.writeFile(filename, '<p>one</p>'); const doc = await f.service.invoke('openDocument', { path: filename });
     const content = '<p>two</p>\r\n'; await f.service.invoke('recoverDocument', { id: doc.id, content }); const saved = await f.service.invoke('saveDocument', { id: doc.id, content });
     expect(saved.content).toBe(content); expect(await fs.readFile(filename, 'utf8')).toBe(content); expect((await f.service.invoke('bootstrap', undefined)).recoveries).toEqual([]);
+  });
+  it('saves a new local copy and requires confirmation before replacing an existing file', async () => {
+    const f = await fixture(), original = path.join(f.localRoot, 'original.html'), target = path.join(f.localRoot, 'copy.html');
+    await fs.writeFile(original, '<p>original</p>');
+    const doc = await f.service.invoke('openDocument', { path: original });
+    await fs.writeFile(target, '<p>existing</p>');
+    vi.mocked(f.native.confirm).mockResolvedValueOnce(false);
+    await expect(f.service.invoke('saveDocument', { id: doc.id, path: target, content: '<p>copy</p>' })).rejects.toThrow('geannuleerd');
+    expect(await fs.readFile(target, 'utf8')).toBe('<p>existing</p>');
+    const saved = await f.service.invoke('saveDocument', { id: doc.id, path: target, content: '<p>copy</p>' });
+    expect(saved.path).toBe(target); expect(saved.remote).toBeUndefined();
+    expect(await fs.readFile(original, 'utf8')).toBe('<p>original</p>');
+    expect(await fs.readFile(target, 'utf8')).toBe('<p>copy</p>');
+    const backupRoot = path.join(f.localRoot, '.ftp-studio-backups');
+    const backups = await fs.readdir(backupRoot);
+    expect(backups).toHaveLength(1);
+    expect(await fs.readFile(path.join(backupRoot, backups[0], 'copy.html'), 'utf8')).toBe('<p>existing</p>');
+  });
+  it('refuses Save As when the destination changes during overwrite confirmation', async () => {
+    const f = await fixture(), original = path.join(f.localRoot, 'original.html'), target = path.join(f.localRoot, 'copy.html');
+    await fs.writeFile(original, 'source'); await fs.writeFile(target, 'target');
+    const doc = await f.service.invoke('openDocument', { path: original });
+    vi.mocked(f.native.confirm).mockImplementationOnce(async () => { await fs.writeFile(target, 'external writer'); return true; });
+    await expect(f.service.invoke('saveDocument', { id: doc.id, path: target, content: 'my copy' })).rejects.toThrow();
+    expect(await fs.readFile(target, 'utf8')).toBe('external writer');
+    expect(await fs.readFile(original, 'utf8')).toBe('source');
   });
   it('bounds previewasset types and project paths', async () => {
     const f = await fixture(); await fs.writeFile(path.join(f.localRoot, 'main.css'), 'p{color:red}'); await fs.writeFile(path.join(f.localRoot, '.env'), 'PASSWORD'); await fs.writeFile(path.join(f.root, 'outside.css'), 'outside'); await fs.writeFile(path.join(f.localRoot, 'app.js'), 'alert(1)');

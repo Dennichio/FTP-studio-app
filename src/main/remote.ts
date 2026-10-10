@@ -13,7 +13,7 @@ import { endpointIdentity } from '../core/connectionIdentity';
 
 export type SessionFactory = (profile: ConnectionProfile, credentials: Credentials) => Promise<RemoteSession>;
 type Purpose = 'navigation' | 'transfer';
-interface Slot { purpose: Purpose; busy: boolean; session?: RemoteSession; opening?: Promise<RemoteSession>; broken: boolean; closing?: Promise<void>; idleTimer?: ReturnType<typeof setTimeout>; }
+interface Slot { purpose: Purpose; busy: boolean; session?: RemoteSession; opening?: Promise<RemoteSession>; broken: boolean; tainted: boolean; closing?: Promise<void>; idleTimer?: ReturnType<typeof setTimeout>; }
 interface Waiter { purpose: Purpose; signal?: AbortSignal; resolve: (lease: SessionLease) => void; reject: (error: Error) => void; abort?: () => void; }
 interface Connection {
   state: ConnectionState; credentials?: Credentials; slots: Set<Slot>; waiters: Waiter[];
@@ -83,7 +83,7 @@ export class RemoteManager implements RemoteAccess {
     if (previous && !previous.disposed) await this.dispose(previous);
     const c: Connection = { state: { id: validated.id, profile: validated, connected: false }, credentials: credentials && { ...credentials }, slots: new Set(), waiters: [], disposed: false, pumping: false };
     this.connections.set(validated.id, c);
-    const slot: Slot = { purpose: 'navigation', busy: false, broken: false };
+    const slot: Slot = { purpose: 'navigation', busy: false, broken: false, tainted: false };
     c.slots.add(slot);
     let handshakeCredentials = c.credentials;
     try {
@@ -136,11 +136,13 @@ export class RemoteManager implements RemoteAccess {
     slot.busy = false;
     this.clearIdle(slot);
     if (slot.purpose !== 'transfer') return;
-    slot.idleTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
+      if (slot.idleTimer !== timer) return;
       slot.idleTimer = undefined;
       if (!slot.busy && !slot.broken) void this.drop(c, slot).then(() => this.pump(c));
     }, TRANSFER_IDLE_MS);
-    slot.idleTimer.unref();
+    slot.idleTimer = timer;
+    timer.unref();
   }
   private async drop(c: Connection, slot: Slot): Promise<void> {
     this.clearIdle(slot);
@@ -157,7 +159,7 @@ export class RemoteManager implements RemoteAccess {
   private eligible(c: Connection, w: Waiter): Slot | 'new' | 'replace' | undefined {
     const limit = c.state.profile.connectionLimit;
     const nav = [...c.slots].find(s => s.purpose === 'navigation');
-    const idle = [...c.slots].find(s => s.purpose === w.purpose && !s.busy && !s.broken && s.session);
+    const idle = [...c.slots].find(s => s.purpose === w.purpose && !s.busy && !s.broken && !s.tainted && s.session);
     if (idle) return idle;
     if (limit === 1 && [...c.slots].some(s => s.purpose !== w.purpose && !s.busy && !s.broken && s.session)) return 'replace';
     if (c.slots.size >= limit) return undefined;
@@ -179,7 +181,7 @@ export class RemoteManager implements RemoteAccess {
         const w = c.waiters[index]; const choice = this.eligible(c, w)!;
         if (choice === 'replace') { await this.drop(c, [...c.slots].find(s => s.purpose !== w.purpose && !s.busy && !s.broken && s.session)!); continue; }
         c.waiters.splice(index, 1); this.detach(w);
-        const slot = choice === 'new' ? { purpose: w.purpose, busy: true, broken: false } as Slot : choice;
+        const slot = choice === 'new' ? { purpose: w.purpose, busy: true, broken: false, tainted: false } as Slot : choice;
         this.clearIdle(slot);
         slot.busy = true;
         if (choice === 'new') c.slots.add(slot);
@@ -222,10 +224,13 @@ export class RemoteManager implements RemoteAccess {
             try { return await method.apply(target, args); }
             catch (error) {
               const safeError = sanitizedError(error, operationCredentials);
-              if (slot.purpose === 'transfer' || transportFailure(error)) {
-                if (c.slots.has(slot) && !c.disposed) {
+              // Permission/protocol failures can still permit rollback on this same lease.
+              // Preserve the active transport, but never lend that worker to a subsequent job.
+              if (slot.purpose === 'transfer' && !transportFailure(error)) slot.tainted = true;
+              if (transportFailure(error)) {
+                if (!released && !slot.broken && c.slots.has(slot) && !c.disposed) {
                   c.state.error = cleanMessage(error, operationCredentials);
-                  if (slot.purpose === 'navigation' || c.state.profile.connectionLimit === 1) c.state.connected = false;
+                  if (transportFailure(error) && (slot.purpose === 'navigation' || c.state.profile.connectionLimit === 1)) c.state.connected = false;
                 }
                 await this.drop(c, slot); this.emit(); void this.pump(c);
               }
@@ -239,7 +244,7 @@ export class RemoteManager implements RemoteAccess {
         if (released) return; released = true;
         w.signal?.removeEventListener('abort', abort);
         // A caller releasing an unfinished command cannot make its transport available to another lease.
-        if (activeOperations || slot.broken || c.disposed) await this.drop(c, slot);
+        if (activeOperations || slot.broken || slot.tainted || c.disposed) await this.drop(c, slot);
         else this.park(c, slot);
         await this.pump(c);
       } });
@@ -383,7 +388,9 @@ class FtpSession extends ProtocolSession {
   mkdir(path: string): Promise<void> { return this.run(async () => { const safe = this.path(path); await this.guard(safe, true); await this.client.ensureDir(safe); await this.client.cd('/'); }); }
   rename(from: string, to: string): Promise<void> { return this.run(async () => {
     const source = this.path(from); const destination = this.path(to); refuseRoot(this.profile, source); refuseRoot(this.profile, destination);
-    await this.guard(source); await this.guard(destination, true); await this.client.rename(source, destination);
+    await this.guard(source);
+    if (await this.guard(destination, true)) throw new Error('Doel bestaat al; hernoemen mag geen bestaand bestand of bestaande map vervangen.');
+    await this.client.rename(source, destination);
   }); }
   remove(path: string, directory: boolean): Promise<void> { return this.run(async () => {
     const safe = this.path(path); refuseRoot(this.profile, safe); const entry = await this.guard(safe);
@@ -462,7 +469,7 @@ class SftpSession extends ProtocolSession {
   }, signal); }
   stat(path: string): Promise<FileEntry | null> { return this.run(() => this.guard(this.path(path), true)); }
   mkdir(path: string): Promise<void> { return this.run(async () => { const safe = this.path(path); await this.guard(safe, true); await this.client.mkdir(safe, true); }); }
-  rename(from: string, to: string): Promise<void> { return this.run(async () => { const source = this.path(from); const destination = this.path(to); refuseRoot(this.profile, source); refuseRoot(this.profile, destination); await this.guard(source); await this.guard(destination, true); await this.client.rename(source, destination); }); }
+  rename(from: string, to: string): Promise<void> { return this.run(async () => { const source = this.path(from); const destination = this.path(to); refuseRoot(this.profile, source); refuseRoot(this.profile, destination); await this.guard(source); if (await this.guard(destination, true)) throw new Error('Doel bestaat al; hernoemen mag geen bestaand bestand of bestaande map vervangen.'); await this.client.rename(source, destination); }); }
   remove(path: string, directory: boolean): Promise<void> { return this.run(async () => { const safe = this.path(path); refuseRoot(this.profile, safe); const entry = await this.guard(safe); if (directory !== (entry?.kind === 'directory')) throw new Error('Bestandstype is gewijzigd.'); if (directory) await this.client.rmdir(safe, false); else await this.client.delete(safe, false); }); }
   chmod(path: string, mode: string): Promise<void> { return this.run(async () => { checkMode(mode); const safe = this.path(path); await this.guard(safe); await this.client.chmod(safe, Number.parseInt(mode, 8)); }); }
   upload(localPath: string, remotePath: string, onProgress: (progress: TransferProgress) => void, signal: AbortSignal, offset = 0): Promise<void> {

@@ -36,6 +36,10 @@ function guard(expected: FileSnapshot | null | undefined, actual: FileSnapshot |
   if (expected && expected.modifiedAt === null && !expected.checksum) throw new Conflict(`${label} kan niet veilig worden vergeleken: tijdstempel en controlesom ontbreken.`);
   if (!same(expected, actual)) throw new Conflict(`${label} is sinds het inplannen gewijzigd. Controleer beide versies en plan opnieuw in.`);
 }
+function octalMode(value: string | undefined): string | undefined { return value && /^[0-7]{3,4}$/.test(value) ? value : undefined; }
+function sameMode(expected: string, actual: string | undefined): boolean {
+  return !!octalMode(actual) && Number.parseInt(expected, 8) === Number.parseInt(actual!, 8);
+}
 function sensitive(name: string): boolean {
   return /^(?:\.env(?:\..*)?|\.ssh|\.aws|\.npmrc|\.pypirc|\.netrc|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|credentials(?:\..*)?|secrets?(?:\..*)?)$/i.test(name) || /\.(?:pem|key|p12|pfx|kdbx)$/i.test(name);
 }
@@ -249,6 +253,15 @@ export class TransferQueue {
             return;
           }
           if (remoteEntry && remoteEntry.kind !== 'file' || localEntry && !localEntry.isFile()) throw new Conflict('Bron of doel is geen gewoon bestand.');
+          if (item.overwriteExisting === false) {
+            if (item.direction === 'download') {
+              if (localEntry) throw new Conflict('Lokaal doelbestand bestaat al; overschrijven is voor deze opdracht uitgeschakeld.');
+              item.expectedLocal = null;
+            } else {
+              if (remoteEntry) throw new Conflict('Extern doelbestand bestaat al; overschrijven is voor deze opdracht uitgeschakeld.');
+              item.expectedRemote = null;
+            }
+          }
           const local = await localSnapshot(localRoot, item.localPath);
           if (item.expectedLocal === undefined) item.expectedLocal = local;
           if (item.expectedRemote === undefined) item.expectedRemote = snapshot(remoteEntry);
@@ -428,6 +441,8 @@ export class TransferQueue {
     const existing = await remoteSafe(session, remoteRoot, job.remotePath);
     if (existing && existing.kind !== 'file') throw new Conflict('Extern doel is geen gewoon bestand.');
     guard(job.expectedRemote, snapshot(existing), 'Extern doel');
+    // SFTP exposes a reliable octal mode. FTP servers may omit it; ownership/ACLs are not portable here.
+    const preservedMode = octalMode(existing?.permissions);
     await ensureRemoteDirectory(session, remoteRoot, path.posix.dirname(job.remotePath));
     const token = randomUUID(), stage = path.posix.join(path.posix.dirname(job.remotePath), `.${path.posix.basename(job.remotePath)}.ftp-studio-${token}.part`);
     const backup = `${stage}.backup`;
@@ -445,11 +460,15 @@ export class TransferQueue {
       staged = true;
       await session.upload(copy, stage, this.progress(job), signal); // No unsupported offset/resume claim.
       abort(signal);
+      if (preservedMode) await session.chmod(stage, preservedMode);
       const uploaded = await remoteSafe(session, remoteRoot, stage);
       if (!uploaded || uploaded.kind !== 'file' || uploaded.size !== job.size) throw new Error('Groottecontrole van het tijdelijke externe bestand is mislukt.');
+      if (preservedMode && !sameMode(preservedMode, uploaded.permissions)) throw new Conflict('De oorspronkelijke serverrechten konden niet op het tijdelijke bestand worden bevestigd.');
       if (uploaded.checksum && uploaded.checksum !== copySnapshot.checksum) throw new Conflict('Controlesom van het tijdelijke externe bestand klopt niet.');
       guard(job.sourceSnapshot, await localSnapshot(localRoot, job.localPath), 'Lokale bron');
-      guard(job.expectedRemote, snapshot(await remoteSafe(session, remoteRoot, job.remotePath)), 'Extern doel');
+      const currentTarget = await remoteSafe(session, remoteRoot, job.remotePath);
+      guard(job.expectedRemote, snapshot(currentTarget), 'Extern doel');
+      if (preservedMode && !sameMode(preservedMode, currentTarget?.permissions)) throw new Conflict('De serverrechten van het doel zijn sinds het begin van de overdracht gewijzigd.');
       abort(signal);
       active.committing = true;
       record.transaction = { stage, ...(existing ? { backup } : {}), phase: 'prepared' };
@@ -458,7 +477,9 @@ export class TransferQueue {
         if (existing) {
           await session.rename(job.remotePath, backup);
           record.transaction.phase = 'backed-up'; this.persist();
-          guard(job.expectedRemote, snapshot(await remoteSafe(session, remoteRoot, backup)), 'Externe reservekopie');
+          const originalBackup = await remoteSafe(session, remoteRoot, backup);
+          guard(job.expectedRemote, snapshot(originalBackup), 'Externe reservekopie');
+          if (preservedMode && !sameMode(preservedMode, originalBackup?.permissions)) throw new Conflict('De serverrechten van de originele reservekopie zijn gewijzigd.');
           if (await remoteSafe(session, remoteRoot, job.remotePath)) throw new Conflict('Het externe doel is tijdens de bestandswissel opnieuw aangemaakt.');
         }
         // Generic FTP/SFTP has no conditional rename: re-stat narrows, but cannot eliminate, a concurrent server writer race.
@@ -466,6 +487,7 @@ export class TransferQueue {
         record.transaction.phase = 'installed'; this.persist();
         const installed = await remoteSafe(session, remoteRoot, job.remotePath);
         if (!installed || installed.kind !== 'file' || !same(snapshot(uploaded), snapshot(installed))) throw new Conflict('Het geïnstalleerde externe bestand kon niet worden bevestigd.');
+        if (preservedMode && !sameMode(preservedMode, installed.permissions)) throw new Conflict('De rechten van het geïnstalleerde serverbestand wijken af. De originele reservekopie blijft behouden.');
         if (installed.checksum && installed.checksum !== copySnapshot.checksum) throw new Conflict('Controlesom van het geïnstalleerde externe bestand klopt niet.');
         job.verifiedRemote = snapshot(installed)!;
         job.verifiedLocal = structuredClone(job.sourceSnapshot!);
@@ -515,6 +537,15 @@ export class TransferQueue {
       guard(job.sourceSnapshot, verifiedRemote, 'Externe bron');
       if (verifiedRemote?.checksum && downloaded.checksum !== verifiedRemote.checksum) throw new Conflict('Controlesom van de externe bron is tijdens downloaden gewijzigd.');
       guard(job.expectedLocal, await localSnapshot(localRoot, job.localPath), 'Lokaal doel');
+      let preservedMode: number | undefined;
+      if (job.expectedLocal) {
+        const originalAttributes = await fs.lstat(job.localPath);
+        if (!originalAttributes.isFile()) throw new Conflict('Lokaal doel is geen gewoon bestand meer.');
+        preservedMode = originalAttributes.mode & 0o777;
+        const handle = await fs.open(stage, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+        try { await handle.chmod(preservedMode); await handle.sync(); } finally { await handle.close(); }
+        if (((await fs.lstat(stage)).mode & 0o777) !== preservedMode) throw new Conflict('De oorspronkelijke lokale rechten konden niet op het tijdelijke bestand worden bevestigd.');
+      }
       // Refuse unsupported filesystems before moving an existing original out of the way.
       const probe = `${stage}.link-check`;
       try { await fs.link(stage, probe); await fs.unlink(probe); } catch {
@@ -530,6 +561,7 @@ export class TransferQueue {
           await fs.rename(job.localPath, backup);
           record.transaction.phase = 'backed-up'; this.persist();
           guard(job.expectedLocal, await localSnapshot(localRoot, backup), 'Lokale reservekopie');
+          if (preservedMode !== undefined && ((await fs.lstat(backup)).mode & 0o777) !== preservedMode) throw new Conflict('De lokale rechten zijn tijdens de bestandswissel gewijzigd.');
           if (await localSnapshot(localRoot, job.localPath)) throw new Conflict('Het lokale doel is tijdens de bestandswissel opnieuw aangemaakt.');
         }
         await localSafe(localRoot, stage);
@@ -543,6 +575,7 @@ export class TransferQueue {
         record.transaction.phase = 'installed'; this.persist();
         const installed = await localSnapshot(localRoot, job.localPath);
         if (!installed || installed.size !== downloaded.size || installed.checksum !== downloaded.checksum) throw new Conflict('Het geïnstalleerde lokale bestand kon niet worden bevestigd.');
+        if (preservedMode !== undefined && ((await fs.lstat(job.localPath)).mode & 0o777) !== preservedMode) throw new Conflict('De rechten van het geïnstalleerde lokale bestand wijken af. De originele reservekopie blijft behouden.');
         job.verifiedRemote = verifiedRemote!;
         job.verifiedLocal = installed;
         record.transaction = undefined; this.persist();

@@ -38,14 +38,18 @@ export interface DocumentData {
   remote?: { connectionId: string; path: string; original: FileSnapshot; endpointKey?: string };
   original: FileSnapshot; recovery?: boolean;
 }
-export interface SearchQuery { text: string; regex: boolean; caseSensitive: boolean; glob?: string; }
+export interface SearchQuery {
+  text: string; regex: boolean; caseSensitive: boolean; glob?: string;
+  minSize?: number; maxSize?: number; modifiedAfter?: number; modifiedBefore?: number;
+  pathGlob?: string; kind?: 'file' | 'directory' | 'any'; recursive?: boolean;
+}
 export interface SearchResult { path: string; line: number; column: number; text: string; length: number; }
 export interface ReplacementPreview { path: string; before: string; after: string; checksum: string; count: number; }
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'conflict';
 export interface TransferRequest {
   connectionId: string; direction: 'upload' | 'download'; localPath: string; remotePath: string;
   priority?: number; expectedRemote?: FileSnapshot | null; expectedLocal?: FileSnapshot | null;
-  allowSensitive?: boolean; projectId?: string; expectedEndpoint?: string;
+  allowSensitive?: boolean; projectId?: string; expectedEndpoint?: string; overwriteExisting?: boolean;
 }
 export interface TransferJob extends TransferRequest {
   id: string; status: TransferStatus; size: number; transferred: number; speed: number;
@@ -65,18 +69,19 @@ export interface Api {
   bootstrap: { args: void; result: BootstrapData };
   chooseFolder: { args: void; result: string | null };
   chooseFile: { args: { title?: string }; result: string | null };
+  chooseSaveFile: { args: { defaultPath: string }; result: string | null };
   listLocal: { args: { path: string; showHidden?: boolean; filters?: FilterRule[] }; result: FileEntry[] };
   mutateLocal: { args: { operation: 'mkdir' | 'create' | 'rename' | 'delete' | 'copy' | 'move'; path: string; destination?: string }; result: void };
   saveProfile: { args: { profile: ConnectionProfile; credentials?: Credentials }; result: ConnectionProfile };
   deleteProfile: { args: { id: string }; result: void };
   connect: { args: { profile: ConnectionProfile; credentials?: Credentials }; result: ConnectionState };
   disconnect: { args: { connectionId: string }; result: void };
-  listRemote: { args: { connectionId: string; path: string }; result: FileEntry[] };
-  statRemote: { args: { connectionId: string; path: string }; result: FileEntry | null };
-  mutateRemote: { args: { connectionId: string; operation: 'mkdir' | 'rename' | 'delete' | 'chmod'; path: string; destination?: string; mode?: string; recursive?: boolean; confirmed?: boolean }; result: void };
-  searchRemote: { args: { connectionId: string; root: string; query: SearchQuery; requestId: string }; result: FileEntry[] };
+  listRemote: { args: { connectionId: string; path: string; expectedEndpoint?: string }; result: FileEntry[] };
+  statRemote: { args: { connectionId: string; path: string; expectedEndpoint?: string }; result: FileEntry | null };
+  mutateRemote: { args: { connectionId: string; expectedEndpoint?: string; operation: 'mkdir' | 'rename' | 'delete' | 'chmod'; path: string; destination?: string; mode?: string; recursive?: boolean; confirmed?: boolean }; result: void };
+  searchRemote: { args: { connectionId: string; expectedEndpoint?: string; root: string; query: SearchQuery; requestId: string }; result: FileEntry[] };
   cancelSearch: { args: { requestId: string }; result: void };
-  openDocument: { args: { path: string; connectionId?: string }; result: DocumentData };
+  openDocument: { args: { path: string; connectionId?: string; expectedEndpoint?: string }; result: DocumentData };
   saveDocument: { args: { id: string; content: string; path?: string }; result: DocumentData };
   recoverDocument: { args: { id: string; content: string }; result: void };
   discardRecovery: { args: { id: string }; result: void };

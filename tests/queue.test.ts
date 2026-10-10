@@ -11,7 +11,7 @@ class MemoryStore implements KeyValueStore {
   set<T>(key: string, value: T): void { this.values.set(key, structuredClone(value)); }
   delete(key: string): void { this.values.delete(key); }
 }
-type RemoteFile = { kind: 'file' | 'directory' | 'symlink'; data: Buffer; modifiedAt: number };
+type RemoteFile = { kind: 'file' | 'directory' | 'symlink'; data: Buffer; modifiedAt: number; permissions?: string };
 class MemoryRemote implements RemoteAccess {
   files = new Map<string, RemoteFile>();
   config: ConnectionProfile;
@@ -23,6 +23,8 @@ class MemoryRemote implements RemoteAccess {
   signals: AbortSignal[] = [];
   renames: [string, string][] = [];
   removals: string[] = [];
+  chmodCalls: Array<[string, string]> = [];
+  chmodFailure = false;
   failures = 0;
   hold?: Promise<void>;
   afterUpload?: () => Promise<void>;
@@ -38,7 +40,7 @@ class MemoryRemote implements RemoteAccess {
   directory(target: string): void { this.files.set(target, { kind: 'directory', data: Buffer.alloc(0), modifiedAt: this.time++ }); }
   entry(target: string): FileEntry | null {
     const item = this.files.get(target);
-    return item ? { name: path.posix.basename(target), path: target, kind: item.kind, size: item.data.length, modifiedAt: item.modifiedAt } : null;
+    return item ? { name: path.posix.basename(target), path: target, kind: item.kind, size: item.data.length, modifiedAt: item.modifiedAt, permissions: item.permissions } : null;
   }
   async acquire(_connectionId: string, _purpose: 'navigation' | 'transfer', signal?: AbortSignal): Promise<SessionLease> {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -60,7 +62,11 @@ class MemoryRemote implements RemoteAccess {
         this.files.set(to, original); this.files.delete(from);
       },
       remove: async target => { this.removals.push(target); this.files.delete(target); },
-      chmod: async () => {},
+      chmod: async (target, mode) => {
+        this.chmodCalls.push([target, mode]);
+        if (this.chmodFailure) throw new Error('Permission denied while setting staged mode');
+        const entry = this.files.get(target); if (!entry) throw new Error('Source missing'); entry.permissions = mode;
+      },
       upload: async (local, remote, progress, abort, offset) => {
         expect(offset).toBeUndefined();
         await this.transfer(path.basename(remote), abort, async () => {
@@ -222,6 +228,43 @@ describe('TransferQueue', () => {
     expect(await fs.readdir(path.join(f.root, 'bundle/keep'))).toEqual(['index.html']);
   });
 
+  it('rejects an entire recursive no-replace download if any nested target already exists', async () => {
+    const f = await fixture();
+    f.remote.directory('/site/bundle'); f.remote.directory('/site/bundle/nested');
+    f.remote.put('/site/bundle/new.txt', 'new remote file');
+    f.remote.put('/site/bundle/nested/existing.txt', 'remote replacement');
+    await f.upload('bundle/nested/existing.txt', 'local original');
+    await expect(f.queue.enqueue([{ connectionId: 'connection', direction: 'download', localPath: path.join(f.root, 'bundle'), remotePath: '/site/bundle', overwriteExisting: false, expectedLocal: null }])).rejects.toThrow('overschrijven');
+    expect(f.queue.jobs()).toHaveLength(0); expect(f.remote.calls).toHaveLength(0);
+    expect(await fs.readFile(path.join(f.root, 'bundle/nested/existing.txt'), 'utf8')).toBe('local original');
+    expect(await fs.readdir(path.join(f.root, 'bundle'))).toEqual(['nested']);
+  });
+
+  it('allows directory merges while guarding every no-replace descendant against a later writer', async () => {
+    const f = await fixture();
+    f.remote.directory('/site/bundle'); f.remote.directory('/site/bundle/nested');
+    f.remote.put('/site/bundle/nested/file.txt', 'downloaded');
+    await fs.mkdir(path.join(f.root, 'bundle/nested'), { recursive: true });
+    const target = path.join(f.root, 'bundle/nested/file.txt');
+    f.remote.afterDownload = async () => { await fs.writeFile(target, 'created by another writer'); };
+    const [job] = await f.queue.enqueue([{ connectionId: 'connection', direction: 'download', localPath: path.join(f.root, 'bundle'), remotePath: '/site/bundle', overwriteExisting: false }]);
+    expect(job.expectedLocal).toBe(null); expect(job.overwriteExisting).toBe(false);
+    await done(f.queue); expect(f.queue.jobs()[0].status).toBe('conflict');
+    expect(await fs.readFile(target, 'utf8')).toBe('created by another writer');
+  });
+
+  it('rejects existing no-replace upload targets and preserves supplied source guards', async () => {
+    const f = await fixture(); const upload = await f.upload('no-replace.txt', 'local');
+    f.remote.put(upload.remotePath, 'server original');
+    await expect(f.queue.enqueue([{ ...upload, overwriteExisting: false }])).rejects.toThrow('overschrijven');
+    expect(f.remote.files.get(upload.remotePath)?.data.toString()).toBe('server original');
+    const download = f.download('new-download.txt', 'source');
+    const sourceGuard = { size: 999, modifiedAt: 0 };
+    const [job] = await f.queue.enqueue([{ ...download, overwriteExisting: false, expectedRemote: sourceGuard }]);
+    expect(job.expectedRemote).toEqual(sourceGuard); expect(job.expectedLocal).toBe(null);
+    await done(f.queue); expect(f.queue.jobs()[0].status).toBe('conflict'); expect(f.remote.calls).toHaveLength(0);
+  });
+
   it('narrowly authorizes guarded single-file cache uploads without broadening local access', async () => {
     const cache = await fs.mkdtemp(path.join(os.tmpdir(), 'ftp-queue-cache-'));
     const f = await fixture({}, undefined, undefined, { trustedCacheRoot: cache });
@@ -293,6 +336,38 @@ describe('TransferQueue', () => {
     expect(f.remote.renames[0][1]).toMatch(/\.backup$/);
     expect(f.remote.removals).not.toContain('/site/page.html');
     expect([...f.remote.files.keys()].filter(key => key.includes('.ftp-studio-'))).toHaveLength(0);
+  });
+
+  it('preserves a reliable existing remote mode on the staged replacement', async () => {
+    const f = await fixture(); const request = await f.upload('private.html', 'new content');
+    f.remote.put(request.remotePath, 'original'); f.remote.files.get(request.remotePath)!.permissions = '0600';
+    await f.queue.enqueue([request]); await done(f.queue);
+    expect(f.queue.jobs()[0].status).toBe('completed');
+    expect(f.remote.files.get(request.remotePath)?.permissions).toBe('0600');
+    expect(f.remote.chmodCalls).toHaveLength(1);
+    expect(f.remote.chmodCalls[0][0]).toMatch(/\.part$/);
+    expect(f.remote.chmodCalls[0][1]).toBe('0600');
+  });
+
+  it('leaves the original remote file untouched when applying its mode fails', async () => {
+    const f = await fixture(); const request = await f.upload('private.html', 'new content');
+    f.remote.put(request.remotePath, 'original'); f.remote.files.get(request.remotePath)!.permissions = '0640'; f.remote.chmodFailure = true;
+    await f.queue.enqueue([request]); await done(f.queue);
+    expect(f.queue.jobs()[0].status).toBe('failed');
+    expect(f.remote.files.get(request.remotePath)?.data.toString()).toBe('original');
+    expect(f.remote.files.get(request.remotePath)?.permissions).toBe('0640');
+    expect(f.remote.renames).toHaveLength(0);
+  });
+
+  it('does not overwrite a concurrent remote permission change', async () => {
+    const f = await fixture(); const request = await f.upload('private.html', 'new content');
+    f.remote.put(request.remotePath, 'original'); f.remote.files.get(request.remotePath)!.permissions = '0640';
+    f.remote.afterUpload = async () => { f.remote.files.get(request.remotePath)!.permissions = '0600'; };
+    await f.queue.enqueue([request]); await done(f.queue);
+    expect(f.queue.jobs()[0].status).toBe('conflict');
+    expect(f.remote.files.get(request.remotePath)?.data.toString()).toBe('original');
+    expect(f.remote.files.get(request.remotePath)?.permissions).toBe('0600');
+    expect(f.remote.renames).toHaveLength(0);
   });
 
   it('restores the original after a staging rename failure', async () => {
@@ -383,6 +458,31 @@ describe('TransferQueue', () => {
     expect(f.queue.jobs()[0].verifiedLocal?.size).toBe(Buffer.byteLength('remote content'));
     expect(f.queue.jobs()[0].verifiedRemote?.modifiedAt).toBe(f.remote.entry(request.remotePath)!.modifiedAt);
     expect(await fs.readdir(f.root)).toEqual(['download.txt']);
+  });
+
+  it('preserves the existing local access mode when installing a download', async () => {
+    const f = await fixture(); const request = f.download('permissions.txt', 'downloaded');
+    await fs.writeFile(request.localPath, 'original'); await fs.chmod(request.localPath, 0o664);
+    const expectedMode = (await fs.stat(request.localPath)).mode & 0o777;
+    await f.queue.enqueue([request]); await done(f.queue);
+    expect(f.queue.jobs()[0].status).toBe('completed');
+    expect((await fs.stat(request.localPath)).mode & 0o777).toBe(expectedMode);
+    expect(await fs.readFile(request.localPath, 'utf8')).toBe('downloaded');
+  });
+
+  it('leaves the existing local file untouched when staged chmod fails', async () => {
+    const f = await fixture(); const request = f.download('permissions.txt', 'downloaded');
+    await fs.writeFile(request.localPath, 'original');
+    const handle = await fs.open(request.localPath, 'r'), prototype = Object.getPrototypeOf(handle);
+    await handle.close();
+    const originalChmod = prototype.chmod;
+    prototype.chmod = async () => { throw Object.assign(new Error('Staged chmod denied'), { code: 'EACCES' }); };
+    try {
+      await f.queue.enqueue([request]); await done(f.queue);
+      expect(f.queue.jobs()[0].status).toBe('failed');
+      expect(await fs.readFile(request.localPath, 'utf8')).toBe('original');
+      expect(await fs.readdir(f.root)).toEqual(['permissions.txt']);
+    } finally { prototype.chmod = originalChmod; }
   });
 
   it('pauses/cancels running work, releases sessions and resumes from zero', async () => {

@@ -43,4 +43,4 @@ Zie de [gebruikershandleiding](docs/USER-GUIDE.md) voor de volledige werkwijze e
 
 De eigen broncode valt onder [MIT](LICENSE). Gebundelde dependencies behouden hun eigen licenties.
 
-Zodra `package-lock.json` is gegenereerd en gecontroleerd, gebruikt u `npm ci` voor reproduceerbare volgende installaties. Offline kerncontroles werken zonder npm-downloads met Node.js 24: `npm run test:offline` en `npm run test:queue:offline`. Deze vervangen de volledige tests en Windows-validatie niet.
+Zodra `package-lock.json` is gegenereerd en gecontroleerd, gebruikt u `npm ci` voor reproduceerbare volgende installaties. Offline kerncontroles werken zonder npm-downloads met Node.js 24: `npm run test:offline`, `npm run test:queue:offline`, `npm run test:search:offline` `npm run test:connections:offline` en `npm run test:permissions:offline`. Deze vervangen de volledige tests en Windows-validatie niet.

@@ -14,7 +14,9 @@ export async function sftpFixture() {
     connections.add(connection); connection.on('close', () => connections.delete(connection)); connection.on('error', () => undefined);
     connection.on('authentication', context => {
       authentications++;
-      if (context.method === 'password' && context.password === 'test') context.accept(); else context.reject();
+      if (context.method === 'password' && context.password === 'test') context.accept();
+      else if (context.method === 'publickey' && context.key.data.equals(key.getPublicSSH()) && (!context.signature || (context.blob && key.verify(context.blob, context.signature, context.hashAlgo) === true))) context.accept();
+      else context.reject();
     });
     connection.on('ready', () => connection.on('session', accept => {
       const session = accept(); session.on('sftp', acceptSftp => {
@@ -48,5 +50,5 @@ export async function sftpFixture() {
     }));
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No SSH address');
-  return { port: address.port, fingerprint, files, advertisedSizes, specialModes, directories, links, get authentications() { return authentications; }, close: async () => { for (const connection of connections) { connection.end(); connection._sock?.destroy(); } await new Promise<void>(resolve => server.close(() => resolve())); } };
+  return { port: address.port, fingerprint, userPrivateKey: privateKey, files, advertisedSizes, specialModes, directories, links, get authentications() { return authentications; }, close: async () => { for (const connection of connections) { connection.end(); connection._sock?.destroy(); } await new Promise<void>(resolve => server.close(() => resolve())); } };
 }

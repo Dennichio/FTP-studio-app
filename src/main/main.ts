@@ -57,6 +57,7 @@ async function start(): Promise<void> {
   service = new StudioService(store, new CredentialVault(store, safeStorage), dataRoot, {
     chooseFolder: async () => { const result = await dialog.showOpenDialog(window!, { title: 'Lokale projectmap kiezen', properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? null : result.filePaths[0] ?? null; },
     chooseFile: async title => { const result = await dialog.showOpenDialog(window!, { title: title || 'Bestand kiezen', properties: ['openFile'] }); return result.canceled ? null : result.filePaths[0] ?? null; },
+    chooseSaveFile: async defaultPath => { const result = await dialog.showSaveDialog(window!, { title: 'Opslaan als', defaultPath, properties: ['createDirectory'] }); return result.canceled ? null : result.filePath ?? null; },
     confirm, openBrowser,
   }, (event, value) => { if (window && !window.isDestroyed()) window.webContents.send(`studio:${event}`, value); });
   ipcMain.handle('studio:invoke', async (event, command: keyof Api, args: unknown) => {

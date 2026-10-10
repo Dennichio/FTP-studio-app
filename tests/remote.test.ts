@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client as FtpClient } from 'basic-ftp';
 import SftpClient from 'ssh2-sftp-client';
-import { createHash } from 'node:crypto';
+import { createHash, createPrivateKey } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ function fakeSession(): RemoteSession {
 function deferred<T>() { let resolve!: (v: T) => void; let reject!: (e: Error) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 const managers: RemoteManager[] = [];
 function manager(factory = vi.fn(async () => fakeSession())) { const m = new RemoteManager(() => ({ password: 'secret' }), vi.fn(), undefined, factory); managers.push(m); return m; }
-afterEach(async () => { await Promise.all(managers.splice(0).map(m => m.close())); vi.restoreAllMocks(); });
+afterEach(async () => { await Promise.all(managers.splice(0).map(m => m.close())); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('bounded session manager', () => {
   it('reserves navigation and never exceeds the limit while transfers wait', async () => {
@@ -31,9 +31,84 @@ describe('bounded session manager', () => {
     expect(factory).toHaveBeenCalledTimes(3); expect(delivered).toBe(false);
     await nav.session.list('/'); await nav.release(); expect(delivered).toBe(false);
     await a.release(); const c = await waiting;
-    expect(sessions[1].close).toHaveBeenCalledTimes(1); expect(factory).toHaveBeenCalledTimes(4);
+    expect(sessions[1].close).not.toHaveBeenCalled(); expect(factory).toHaveBeenCalledTimes(3);
     expect(a.session).not.toBe(b.session); expect(b.session).not.toBe(c.session);
     await b.release(); await c.release();
+  });
+  it('reuses one independent worker session across one hundred tiny transfers', async () => {
+    const sessions: RemoteSession[] = []; const factory = vi.fn(async () => { const session = fakeSession(); sessions.push(session); return session; });
+    const m = manager(factory); await m.connect(profile);
+    for (let index = 0; index < 100; index++) { const lease = await m.acquire('test', 'transfer'); await lease.session.stat(`/tiny-${index}`); await lease.release(); }
+    expect(factory).toHaveBeenCalledTimes(2); expect(sessions[0].stat).not.toHaveBeenCalled(); expect(sessions[1].stat).toHaveBeenCalledTimes(100); expect(sessions[1].close).not.toHaveBeenCalled();
+    const nav = await m.acquire('test', 'navigation'); await nav.session.list('/'); expect(sessions[0].list).toHaveBeenCalledTimes(1); await nav.release();
+    await m.close(); expect(sessions[1].close).toHaveBeenCalledTimes(1);
+  });
+  it('expires idle workers without closing a borrowed session or preventing fresh work', async () => {
+    vi.useFakeTimers(); const sessions: RemoteSession[] = []; const factory = vi.fn(async () => { const session = fakeSession(); sessions.push(session); return session; });
+    const m = manager(factory); await m.connect({ ...profile, autoReconnect: false });
+    const first = await m.acquire('test', 'transfer'); await first.release(); await vi.advanceTimersByTimeAsync(29_000);
+    const borrowed = await m.acquire('test', 'transfer'); await vi.advanceTimersByTimeAsync(2000); expect(sessions[1].close).not.toHaveBeenCalled();
+    await borrowed.session.list('/'); await borrowed.release(); await vi.advanceTimersByTimeAsync(29_999); expect(sessions[1].close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1); expect(sessions[1].close).toHaveBeenCalledTimes(1);
+    const fresh = await m.acquire('test', 'transfer'); expect(factory).toHaveBeenCalledTimes(3); await fresh.release();
+  });
+  it('counts an expired worker until close finishes and never lends the closing slot', async () => {
+    vi.useFakeTimers(); const closing = deferred<void>(); const worker = fakeSession(); vi.mocked(worker.close).mockImplementation(() => closing.promise);
+    const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => worker);
+    const m = manager(factory); await m.connect({ ...profile, connectionLimit: 2 }); const first = await m.acquire('test', 'transfer'); await first.release();
+    await vi.advanceTimersByTimeAsync(30_000); expect(worker.close).toHaveBeenCalledTimes(1);
+    let delivered = false; const next = m.acquire('test', 'transfer').then(lease => { delivered = true; return lease; });
+    await Promise.resolve(); expect(delivered).toBe(false); expect(factory).toHaveBeenCalledTimes(2);
+    closing.resolve(); const fresh = await next; expect(factory).toHaveBeenCalledTimes(3); await fresh.session.list('/'); await fresh.release();
+  });
+  it('ignores stale close, release and cancellation after a worker has been reused', async () => {
+    const worker = fakeSession(); const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => worker);
+    const m = manager(factory); await m.connect(profile); const controller = new AbortController();
+    const old = await m.acquire('test', 'transfer', controller.signal); await old.release(); const current = await m.acquire('test', 'transfer');
+    await old.session.close(); await old.release(); controller.abort(); await current.session.list('/');
+    expect(worker.close).not.toHaveBeenCalled(); expect(factory).toHaveBeenCalledTimes(2); await current.release();
+    await expect(old.session.list('/')).rejects.toThrow('Sessie is gesloten');
+  });
+  it('discards a worker after an ordinary failed command while preserving a usable profile', async () => {
+    const dirty = fakeSession(); vi.mocked(dirty.stat).mockRejectedValue(Object.assign(new Error('Permission denied'), { code: 550 }));
+    const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => dirty);
+    const m = manager(factory); await m.connect({ ...profile, connectionLimit: 1, autoReconnect: false }); const lease = await m.acquire('test', 'transfer');
+    await expect(lease.session.stat('/')).rejects.toThrow('Permission denied'); await lease.release(); expect(dirty.close).toHaveBeenCalledTimes(1);
+    expect(m.states()[0].connected).toBe(true); const fresh = await m.acquire('test', 'transfer'); expect(factory).toHaveBeenCalledTimes(3); await fresh.release();
+  });
+  it('keeps a tainted lease operational for rollback, then discards it at release', async () => {
+    const files = new Map([['/original', 'original bytes'], ['/staged', 'new bytes']]); const worker = fakeSession();
+    vi.mocked(worker.rename).mockImplementation(async (from, to) => {
+      if (from === '/staged') throw Object.assign(new Error('Installation denied'), { code: 550 });
+      const bytes = files.get(from); if (bytes === undefined) throw new Error('Missing source'); files.set(to, bytes); files.delete(from);
+    });
+    vi.mocked(worker.stat).mockImplementation(async path => files.has(path) ? { name: path.slice(1), path, kind: 'file', size: files.get(path)!.length, modifiedAt: 0 } : null);
+    const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => worker);
+    const m = manager(factory); await m.connect(profile); const lease = await m.acquire('test', 'transfer');
+    await lease.session.rename('/original', '/backup'); await expect(lease.session.rename('/staged', '/original')).rejects.toThrow('Installation denied');
+    expect(worker.close).not.toHaveBeenCalled(); expect(await lease.session.stat('/backup')).not.toBeNull(); await lease.session.rename('/backup', '/original');
+    expect(files.get('/original')).toBe('original bytes'); expect(files.has('/backup')).toBe(false);
+    await lease.release(); expect(worker.close).toHaveBeenCalledTimes(1); const next = await m.acquire('test', 'transfer'); expect(factory).toHaveBeenCalledTimes(3); await next.release();
+  });
+  it('does not treat an unfinished operation failing during intentional close as a lost connection', async () => {
+    const operation = deferred<null>(); const closing = deferred<void>(); const oldWorker = fakeSession();
+    vi.mocked(oldWorker.stat).mockImplementation(() => operation.promise);
+    vi.mocked(oldWorker.close).mockImplementation(() => { operation.reject(Object.assign(new Error('Closed while releasing'), { code: 'ENOTCONN' })); return closing.promise; });
+    const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => oldWorker);
+    const m = manager(factory); await m.connect({ ...profile, connectionLimit: 1, autoReconnect: false }); const old = await m.acquire('test', 'transfer');
+    const running = old.session.stat('/'); const assertion = expect(running).rejects.toThrow('Closed while releasing'); const releasing = old.release();
+    await vi.waitFor(() => expect(oldWorker.close).toHaveBeenCalledTimes(1)); expect(m.states()[0].connected).toBe(true);
+    const pendingReplacement = m.acquire('test', 'transfer'); closing.resolve(); await releasing; const replacement = await pendingReplacement; await assertion;
+    expect(m.states()[0].connected).toBe(true); await replacement.session.stat('/'); await replacement.release();
+  });
+  it('does not let an operation failing after release disconnect its replacement', async () => {
+    const failing = deferred<null>(); const oldWorker = fakeSession(); vi.mocked(oldWorker.stat).mockImplementation(() => failing.promise);
+    const factory = vi.fn(async () => fakeSession()).mockImplementationOnce(async () => fakeSession()).mockImplementationOnce(async () => oldWorker);
+    const m = manager(factory); await m.connect({ ...profile, connectionLimit: 1, autoReconnect: false }); const old = await m.acquire('test', 'transfer');
+    const running = old.session.stat('/'); const assertion = expect(running).rejects.toThrow('Old connection closed'); await old.release(); expect(oldWorker.close).toHaveBeenCalledTimes(1);
+    const fresh = await m.acquire('test', 'transfer'); await fresh.session.stat('/'); failing.reject(Object.assign(new Error('Old connection closed'), { code: 'ECONNRESET' })); await assertion;
+    expect(m.states()[0].connected).toBe(true); await fresh.session.list('/'); await fresh.release(); const next = await m.acquire('test', 'transfer'); await next.release();
+    expect(factory).toHaveBeenCalledTimes(3);
   });
   it('serializes transfers and navigation fairly at limit one', async () => {
     const sessions: RemoteSession[] = []; let active = 0; let maxActive = 0;
@@ -178,6 +253,7 @@ describe('real passive FTP sessions', () => {
       server.files.set('/partial.txt', bytes.subarray(0, 11)); await session.upload(source, '/partial.txt', () => undefined, new AbortController().signal, 11); expect(server.files.get('/partial.txt')).toEqual(bytes);
       await writeFile(destination, bytes.subarray(0, 13)); await session.download('/file.txt', destination, () => undefined, new AbortController().signal, 13); expect(await readFile(destination)).toEqual(bytes);
       await expect(session.upload(source, '/partial.txt', () => undefined, new AbortController().signal, 10)).rejects.toThrow('hervatpositie');
+      await expect(session.rename('/partial.txt', '/file.txt')).rejects.toThrow('Doel bestaat al'); expect(server.files.get('/file.txt')).toEqual(bytes); expect(server.files.get('/partial.txt')).toEqual(bytes);
       await session.rename('/partial.txt', '/renamed.txt'); expect(await session.stat('/partial.txt')).toBeNull();
       await session.chmod('/renamed.txt', '644'); await session.remove('/renamed.txt', false); expect(await session.stat('/renamed.txt')).toBeNull();
       await session.mkdir('/folder'); await session.remove('/folder', true);
@@ -196,6 +272,16 @@ describe('real passive FTP sessions', () => {
 });
 
 describe('real SFTP sessions', () => {
+  it('authenticates with an encrypted private key and rejects a wrong key passphrase', async () => {
+    const server = await sftpFixture(); const directory = await mkdtemp(join(tmpdir(), 'ftp-studio-key-auth-')); let session: RemoteSession | undefined;
+    try {
+      const privateKeyPath = join(directory, 'user-key.pem'); const passphrase = 'fixture-key-passphrase';
+      const encryptedKey = createPrivateKey(server.userPrivateKey).export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase }); await writeFile(privateKeyPath, encryptedKey, { mode: 0o600 });
+      const ssh = { ...profile, protocol: 'sftp' as const, port: server.port, hostKeySha256: server.fingerprint, privateKeyPath };
+      await expect(createProtocolSession(ssh, { passphrase: 'wrong-passphrase' })).rejects.toThrow(/key|passphrase|decrypt/i);
+      session = await createProtocolSession(ssh, { passphrase }); expect(await session.list('/')).toEqual([]);
+    } finally { await session?.close(); await server.close(); await rm(directory, { recursive: true, force: true }); }
+  });
   it('checks the host fingerprint before sending credentials', async () => {
     const server = await sftpFixture();
     try {
@@ -219,6 +305,7 @@ describe('real SFTP sessions', () => {
       await writeFile(destination, bytes.subarray(0, 19)); await session.download('/file', destination, () => undefined, new AbortController().signal, 19); expect(await readFile(destination)).toEqual(bytes);
       server.links.add('/link'); await expect(session.stat('/link/secret')).rejects.toThrow('Symbolische');
       expect((await session.list('/')).find(e => e.name === 'link')?.kind).toBe('symlink');
+      await expect(session.rename('/partial', '/file')).rejects.toThrow('Doel bestaat al'); expect(server.files.get('/file')).toEqual(bytes); expect(server.files.get('/partial')).toEqual(bytes);
       await session.rename('/partial', '/renamed'); await session.chmod('/renamed', '644'); await session.remove('/renamed', false); expect(await session.stat('/renamed')).toBeNull();
     } finally { await session?.close(); await server.close(); await rm(directory, { recursive: true, force: true }); }
   });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { promises as fs } from 'node:fs';
+import { appendFileSync, promises as fs } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -57,6 +57,35 @@ describe('safe local workspace', () => {
     expect(await fs.readFile(path.join(root, '.ftp-studio-backups', containers[0], 'a.txt'), 'utf8')).toBe('original');
   });
 
+  it('preserves the conflict, failed rollback cause and backup path when temporary cleanup also fails', async () => {
+    const root = await temp(); const file = path.join(root, 'a.txt'); await fs.writeFile(file, 'original');
+    const original = await readTextFile(file); const link = fs.link.bind(fs); const remove = fs.rm.bind(fs); let temporaryRemovals = 0;
+    vi.spyOn(fs, 'link').mockImplementation(async (from, to) => {
+      if (String(to) === file && String(from).endsWith('.tmp')) await fs.writeFile(file, 'concurrent destination', { flag: 'wx' });
+      return link(from, to);
+    });
+    vi.spyOn(fs, 'rm').mockImplementation(async (target, options) => {
+      if (String(target).endsWith('.tmp') && ++temporaryRemovals > 1) throw Object.assign(new Error('cleanup denied'), { code: 'EACCES' });
+      return remove(target, options);
+    });
+    let failure: unknown;
+    try { await safeSaveTextFile(file, 'editor', original.snapshot); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AggregateError); expect((failure as Error).message).toContain('Oorspronkelijk bestand veilig'); expect((failure as Error).message).toContain('opruimfout');
+    const conflict = (failure as Error).cause as AggregateError;
+    expect(conflict).toBeInstanceOf(AggregateError); expect(conflict.errors).toHaveLength(2); expect(conflict.errors[1]).toMatchObject({ code: 'EEXIST' });
+    expect(await fs.readFile(file, 'utf8')).toBe('concurrent destination');
+    const containers = await fs.readdir(path.join(root, '.ftp-studio-backups')); const backup = path.join(root, '.ftp-studio-backups', containers[0], 'a.txt');
+    expect((failure as Error).message).toContain(backup); expect(await fs.readFile(backup, 'utf8')).toBe('original');
+    const retained = (await fs.readdir(root)).filter(name => name.endsWith('.tmp')); expect(retained).toHaveLength(1); expect(isDefaultExcluded(retained[0])).toBe(true);
+  });
+
+  it('preserves an unsupported-hardlink cause if probe cleanup fails', async () => {
+    const root = await temp(); const file = path.join(root, 'a.txt'); await fs.writeFile(file, 'original'); const original = await readTextFile(file);
+    vi.spyOn(fs, 'link').mockRejectedValue(Object.assign(new Error('link unsupported'), { code: 'EPERM' }));
+    vi.spyOn(fs, 'rm').mockRejectedValue(Object.assign(new Error('cleanup denied'), { code: 'EACCES' }));
+    await expect(safeSaveTextFile(file, 'editor', original.snapshot)).rejects.toThrow('vereist hardlinks'); expect(await fs.readFile(file, 'utf8')).toBe('original');
+  });
+
   it('probes unsupported hardlinks before moving an original and preserves permissions in its backup', async () => {
     const root = await temp(); const file = path.join(root, 'a.txt'); await fs.writeFile(file, 'original', { mode: 0o640 });
     const original = await readTextFile(file);
@@ -67,6 +96,107 @@ describe('safe local workspace', () => {
     const containers = await fs.readdir(path.join(root, '.ftp-studio-backups')); const backup = path.join(root, '.ftp-studio-backups', containers[0], 'a.txt');
     expect(await fs.readFile(backup, 'utf8')).toBe('original');
     if (process.platform !== 'win32') { expect((await fs.stat(backup)).mode & 0o777).toBe(0o640); expect((await fs.stat(file)).mode & 0o777).toBe(0o640); }
+  });
+
+  it.skipIf(process.platform === 'win32')('preserves group-write POSIX bits despite a restrictive umask', async () => {
+    const root = await temp(); const file = path.join(root, 'group.txt'); await fs.writeFile(file, 'before'); await fs.chmod(file, 0o664);
+    const original = await readTextFile(file); const originalMask = process.umask(0o077);
+    try { await safeSaveTextFile(file, 'after', original.snapshot); } finally { process.umask(originalMask); }
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o664);
+    const containers = await fs.readdir(path.join(root, '.ftp-studio-backups'));
+    expect((await fs.stat(path.join(root, '.ftp-studio-backups', containers[0], 'group.txt'))).mode & 0o777).toBe(0o664);
+  });
+
+  it.skipIf(process.platform === 'win32')('preserves a concurrent permission restriction made while staging', async () => {
+    const root = await temp(); const file = path.join(root, 'private.txt'); await fs.writeFile(file, 'original'); await fs.chmod(file, 0o644);
+    const original = await readTextFile(file); const open = fs.open.bind(fs);
+    vi.spyOn(fs, 'open').mockImplementation(async (target, flags, mode) => {
+      if (String(target).endsWith('.tmp')) await fs.chmod(file, 0o600);
+      return open(target, flags, mode);
+    });
+    await expect(safeSaveTextFile(file, 'editor', original.snapshot)).rejects.toThrow('Bestandsrechten');
+    expect(await fs.readFile(file, 'utf8')).toBe('original'); expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === 'win32')('restores a moved original with newly restricted permissions rather than installing the broader temp', async () => {
+    const root = await temp(); const file = path.join(root, 'private.txt'); await fs.writeFile(file, 'original'); await fs.chmod(file, 0o644);
+    const original = await readTextFile(file); const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      await rename(from, to);
+      if (String(from) === file) await fs.chmod(to, 0o600);
+    });
+    await expect(safeSaveTextFile(file, 'editor', original.snapshot)).rejects.toThrow('Bestandsrechten');
+    expect(await fs.readFile(file, 'utf8')).toBe('original'); expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    const containers = await fs.readdir(path.join(root, '.ftp-studio-backups')); const backup = path.join(root, '.ftp-studio-backups', containers[0], 'private.txt');
+    expect((await fs.stat(backup)).mode & 0o777).toBe(0o600); expect(await fs.readFile(backup, 'utf8')).toBe('original');
+  });
+
+  for (const replaceTarget of [false, true]) {
+    it.skipIf(process.platform === 'win32')(`rejects late original-inode chmod without modifying an unrelated target: ${replaceTarget}`, async () => {
+      const root = await temp(), file = path.join(root, 'late.txt');
+      await fs.writeFile(file, 'original'); await fs.chmod(file, 0o644);
+      const original = await readTextFile(file), rename = fs.rename.bind(fs), link = fs.link.bind(fs);
+      let backup: string | undefined;
+      vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => { await rename(from, to); if (String(from) === file) backup = String(to); });
+      vi.spyOn(fs, 'link').mockImplementation(async (from, to) => {
+        if (String(to) === file) { expect(backup).toBeDefined(); await fs.chmod(backup!, 0o600); }
+        await link(from, to);
+        if (String(to) === file && replaceTarget) { await fs.unlink(file); await fs.writeFile(file, 'editor'); await fs.chmod(file, 0o666); }
+      });
+      await expect(safeSaveTextFile(file, 'editor', original.snapshot)).rejects.toThrow('Opslaan vereist controle');
+      expect(await fs.readFile(file, 'utf8')).toBe('editor');
+      expect((await fs.stat(file)).mode & 0o777).toBe(replaceTarget ? 0o666 : 0o600);
+      expect(await fs.readFile(backup!, 'utf8')).toBe('original');
+      expect((await fs.stat(backup!)).mode & 0o777).toBe(0o600);
+    });
+  }
+
+  it('lists metadata with at most sixteen concurrent reads, skips disappearance and preserves sorting', async () => {
+    const root = await temp();
+    await Promise.all(Array.from({ length: 40 }, (_, index) => fs.writeFile(path.join(root, `${String(index).padStart(2, '0')}.txt`), 'x')));
+    await fs.mkdir(path.join(root, 'directory')); const missing = path.join(root, 'gone.txt'); await fs.writeFile(missing, 'x');
+    const originalStat = fs.lstat.bind(fs); let active = 0; let peak = 0;
+    vi.spyOn(fs, 'lstat').mockImplementation(async target => {
+      if (path.dirname(String(target)) !== root) return originalStat(target);
+      active++; peak = Math.max(peak, active);
+      try {
+        await new Promise<void>(resolve => setImmediate(resolve));
+        if (String(target) === missing) await fs.unlink(missing);
+        return await originalStat(target);
+      } finally { active--; }
+    });
+    const entries = await listLocal(root, true);
+    expect(peak).toBeGreaterThan(1); expect(peak).toBeLessThanOrEqual(16); expect(active).toBe(0);
+    expect(entries).toHaveLength(41); expect(entries[0].name).toBe('directory');
+    expect(entries.slice(1).map(entry => entry.name)).toEqual(Array.from({ length: 40 }, (_, index) => `${String(index).padStart(2, '0')}.txt`));
+  });
+
+  it('propagates metadata permission errors instead of silently hiding entries', async () => {
+    const root = await temp(); const denied = path.join(root, 'denied.txt'); await fs.writeFile(denied, 'x');
+    const originalStat = fs.lstat.bind(fs);
+    vi.spyOn(fs, 'lstat').mockImplementation(async target => {
+      if (String(target) === denied) throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+      return originalStat(target);
+    });
+    await expect(listLocal(root, true)).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
+  it('stops hashing at the initial file size if a source grows while streaming', async () => {
+    const root = await temp(); const file = path.join(root, 'growing.txt'); await fs.writeFile(file, 'x');
+    const originalOpen = fs.open.bind(fs); let stream: ReturnType<Awaited<ReturnType<typeof fs.open>>['createReadStream']> | undefined;
+    vi.spyOn(fs, 'open').mockImplementation(async (target, flags, mode) => {
+      const handle = await originalOpen(target, flags, mode);
+      if (String(target) === file) {
+        const originalStream = handle.createReadStream.bind(handle);
+        vi.spyOn(handle, 'createReadStream').mockImplementation(options => {
+          appendFileSync(file, Buffer.alloc(1024 * 1024, 'x'));
+          stream = originalStream(options); return stream;
+        });
+      }
+      return handle;
+    });
+    await expect(localSnapshot(file)).rejects.toThrow('hashcontrole gegroeid');
+    expect(stream!.bytesRead).toBeLessThan(1024 * 1024);
   });
 
   it('never overwrites a concurrent file destination while renaming', async () => {

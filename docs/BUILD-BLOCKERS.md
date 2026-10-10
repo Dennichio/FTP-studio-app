@@ -19,4 +19,10 @@ Bouwen en controleren: typescript, esbuild, vitest, @playwright/test, electron, 
 
 De beheerde HTTP-netwerkpolicy meldt `unrestricted` en `enforced`. De shell-sandbox blijft `restricted`; curl en npm zonder uitbreiding falen bij verbinding met de ingestelde proxy (EPERM/connect refused). Eerdere netwerkgoedkeuringsaanvragen bleven wachten en zijn afgebroken. Er is geen registry-404, versieresolutiefout, TLS-fout of serverauthenticatiefout vastgesteld: het netwerkcommando heeft de registry nog niet bereikt.
 
-Geen TLS-validatie uitgeschakeld, geen proxy omzeild en geen productiecredentials gebruikt. De broncode en offline-controles zijn onafhankelijk van deze blokkade verder ontwikkeld. Twee subagents meldden later een modelgebruikslimiet; de hoofdagent nam hun resterende wijzigingen over.
+Geen TLS-validatie uitgeschakeld, geen proxy omzeild en geen productiecredentials gebruikt. De broncode en offline-controles zijn onafhankelijk van deze blokkade verder ontwikkeld. De eerdere modelgebruikslimiet is opgelost: de oorspronkelijke agents zijn met hun bestaande context hervat. De hoofdagent en reviewers hebben hun bestaande wijzigingen eerst gecontroleerd. De netwerkbeperking is een afzonderlijke blokkade. De laatste HTTPS-proef vroeg uitsluitend toegang tot registry.npmjs.org; er is nog geen succesvolle dependency-download vastgesteld.
+
+## Laatste vaststelling — 10 oktober 2026
+
+Alle achttien directe npm-dependencies ontbreken nog. De cloudpolicy was na de laatste herstart revisie 14, `unrestricted` en `enforced`; de shell kreeg nog steeds geen verbinding met `proxy:8080`. De aanvraag om alleen shell-netwerktoegang toe te voegen voor `npm install --ignore-scripts` is afgebroken zonder installatie-uitvoer. Het ging niet om een vastgestelde npm-versie- of TLS-fout.
+
+Noodzakelijke tussenkomst: werkende netwerktoegang vanuit de shell via de bestaande proxy naar `https://registry.npmjs.org`. Er zijn voor de eerste dependency-installatie geen extra bestandsrechten of installatiehooks nodig. Start niet opnieuw een langdurig wachtend toestemmingsverzoek zolang deze uitvoeringsbeperking ongewijzigd is. Daarna pas de officiële Electron-runtime ophalen en de volledige bouw-/testketen uitvoeren. Alleen een open cloud-internetpolicy heeft in deze sessie de shellbeperking niet verholpen.
