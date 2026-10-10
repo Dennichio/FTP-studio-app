@@ -1,0 +1,42 @@
+.queue-panel .queue-virtual-content {
+  overflow-anchor: none;
+}
+
+.queue-panel .queue-virtual-canvas {
+  position: relative;
+  min-width: 710px;
+}
+
+.queue-panel .queue-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.queue-panel .queue-virtual-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.queue-panel .job-name strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-panel .job-name .job-error {
+  white-space: pre-wrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+.queue-panel .log-row {
+  min-height: 28px;
+}
+
+.queue-panel .log-row p {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+}

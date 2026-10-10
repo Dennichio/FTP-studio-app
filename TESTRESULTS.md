@@ -105,3 +105,14 @@ Nieuwe recoverytests houden een werkelijk uitgevoerde lokale bestandinstallatie 
 Benchmarkresultaten bewijzen geen algemeen paralleliteitsoptimum of prestaties op Windows/internet/TLS/SSH. Een latere FTP-library-update is niet opnieuw met de complete benchmarkmatrix gemeten. Functionele protocolregressies zijn wel opnieuw uitgevoerd.
 
 Het definitieve Windows-archief is 162.798.357 bytes. SHA-256: `1abf46b57a49885fc5c7c81c59b3c137d0f4b121724d97a4acfedb994ddaeead`. Verificatie van de x64 PE-header en bytegelijkheid tussen alle verpakte rendererassets en de actuele build slaagde. Zie `docs/WINDOWS-BUILD-CHECK.json`.
+
+## Vervolg na downloadcheckpoint — wachtrijvirtualisatie
+
+- Typecheck en applicatiebuild: geslaagd.
+- Volledige Electron/Xvfb-run: **43/43 geslaagd, 2,0 minuten**.
+- Na uitsluitend aanscherpen van de testassertie voor een werkelijk verwerkte rendererupdate: **3/3 gerichte wachtrijtests geslaagd, 7,6 seconden**. Geen productiecodewijziging tussen deze runs.
+- De nieuwe tests gebruiken 2.000 echte SQLite-wachtrijrecords en 2.000 werkelijk gelogde filesystemfouten. Zij controleren minder dan 60 gemonteerde rijen in de geteste viewports, acties over volledige filters, leesbare lange tekst, toetsenbordbediening, behouden focus, breedte-/hoogtewijzigingen en scrollankering bij logtoevoegingen. Geen IPC-mocks in deze tests.
+- Onafhankelijke categorie-A-review: akkoord na twee herstelde bevindingen en aangescherpte focustest.
+- De vorige 408/408 Vitest-resultaten blijven van het eerdere checkpoint; backend en protocollen zijn in deze ronde niet gewijzigd en niet opnieuw volledig getest.
+- De gedeelde Windows-ZIP is ongewijzigd en bevat de nieuwe virtualisatie niet. Deze resultaten betreffen Linux/Electron, niet Windows.
+- Beide Drive-downloads zijn na upload via metadata gecontroleerd en de gebruiker bevestigt dat downloaden werkt. De samengevoegde SHA-256 komt overeen met de oorspronkelijke ZIP. Zie docs/DOWNLOAD.md.

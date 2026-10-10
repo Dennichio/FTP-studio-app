@@ -1,6 +1,6 @@
 # FTP Studio — functionele specificatie
 
-**Status:** De huidige build is op Linux gecompileerd en gecontroleerd: **408/408 Vitest-tests in 19 suites (63,29 s)**. De uitgebreide Electron/Xvfb-ronde haalde **38/40**; na herstel van de labels in het vergelijkingsvenster slaagden **alle vijf betreffende scenario’s (20,1 s)**. De overige 35 scenario’s waren geslaagd. Dit is geen nieuwe volledige 40/40-run. Typecheck en applicatiebuild zijn groen. De actuele Windows x64 ZIP is samengesteld en op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd. De volledige masterprompt is nog niet afgerond.
+**Status:** De broncode is verder ontwikkeld na het Windows-checkpoint: wachtrij en activiteitenlog gebruiken nu virtualisatie met variabele rijhoogtes. **43/43 Electron/Xvfb-scenario’s geslaagd (2,0 min)**; na aanscherping van één focusassertie ook **3/3 gerichte wachtrijtests geslaagd (7,6 s)**. Typecheck en applicatiebuild slagen; onafhankelijke A-review akkoord. De eerdere volledige Vitest-run blijft **408/408**; backendcode is in deze ronde niet gewijzigd. De gedeelde Windows-ZIP hoort bij checkpoint `e5022c9` en bevat deze nieuwe virtualisatie nog niet. Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd; de volledige masterprompt is nog niet afgerond.
 
 ## Doel en doelgroep
 

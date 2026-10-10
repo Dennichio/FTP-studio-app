@@ -45,3 +45,7 @@ Na de npm-audit is basic-ftp bijgewerkt naar 6.2.3. Afwijkende PASV-datahosts wo
 DOMPurify 3.4.16 is expliciet vastgelegd. Monaco 0.55.1 bevat daarnaast een eigen oudere kopie: een nauw begrensde esbuild-resolutie vervangt daarom de import vanuit Monaco's domSanitize.js door het bijgewerkte pakket. Metafilecontroles weigeren de oude bron in de renderer en iedere sanitizer in editorworkers. Een audit zonder meldingen alleen bewijst deze bundeleigenschap niet.
 
 De bestandsvergelijking toont twee alleen-lezen momentopnamen. Zij verandert geen hersteltekst, werkcache of uploadbasis. Serverinhoud wordt apart, begrensd en endpointgebonden gelezen. Broncodewijzigingen blijven een bewuste actie in de gewone editor. Nieuwere hersteltekst tijdens opslaan wordt na de schijfcommit behouden en op de nieuwe metadata gebaseerd.
+
+## Wachtrijvirtualisatie met natuurlijke rijhoogtes — 10 oktober 2026
+
+Gekozen voor een lokale gevirtualiseerde lijst zonder nieuwe dependency. Vaste afgekorte rijen zouden volledige foutmeldingen verbergen; daarom worden natuurlijke rijhoogtes gemeten en in een cache bewaard. De volledige filterverzameling blijft de bron voor pauzeren/hervatten/wissen, onafhankelijk van de zichtbare DOM. Onafhankelijke A-review leidde tot herstel van achterblijvende focusverzoeken en scrollankering na hoogtekrimp. Echte Electron-tests met 2.000 SQLite-overdrachten en 2.000 werkelijke filesystemfouten slagen, inclusief filteracties, lange tekst, resize, focus en log-prepends. Dit verandert de overdrachtsengine niet.

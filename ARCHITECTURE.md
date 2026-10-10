@@ -61,3 +61,7 @@ De twee loopback-FTP-benchmarkmatrices zijn elk 16 scenario’s en controleerden
 Bestandskolommen worden per paneel onder `settings.layout.fileColumns` opgeslagen. Pointer- en toetsenbordacties bewaren alleen bij afronden; annuleren herstelt de eerdere breedte. `editorSplitPercent` volgt hetzelfde principe. Deze layoutwijzigingen veranderen geen bestanden.
 
 De rendererbundel vervangt Monaco's ingebouwde DOMPurify door de expliciete 3.4.16-dependency. `dist/renderer/dependency-inputs.json` legt versie en daadwerkelijke bundelinput vast; de build faalt bij een afwijkende sanitizerbron.
+
+## Grote overdrachtslijsten en logboeken
+
+`QueuePanel` houdt de volledige gefilterde verzameling beschikbaar voor centrale acties en tellers, maar monteert alleen de zichtbare rijen, vijf extra rijen per kant en eventueel één gefocuste rij. `ResizeObserver` meet natuurlijke hoogtes zodat lange fout- en logteksten niet worden afgekapt. Meetgegevens zijn gekoppeld aan item-id, tekst en viewportbreedte. Een vooraf bewaarde scrollpositie ankert op dezelfde rij bij updates en herindeling; een remount bij filter- of tabwijziging begint bovenaan. Toetsenbordnavigatie kan niet-gemonteerde rijen bereiken. Er is geen extra runtimebibliotheek toegevoegd. Positieberekening en filtering blijven lineair in het aantal items; dit is DOM-virtualisatie, geen garantie van constante totale CPU-kosten.

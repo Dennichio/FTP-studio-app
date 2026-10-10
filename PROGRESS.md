@@ -2,7 +2,7 @@
 
 ## Huidige stand — 10 oktober 2026
 
-De huidige build is op Linux gecompileerd en gecontroleerd: **408/408 Vitest-tests in 19 suites (63,29 s)**. De uitgebreide Electron/Xvfb-ronde haalde **38/40**; na herstel van de labels in het vergelijkingsvenster slaagden **alle vijf betreffende scenario’s (20,1 s)**. De overige 35 scenario’s waren geslaagd. Dit is geen nieuwe volledige 40/40-run. Typecheck en applicatiebuild zijn groen. De actuele Windows x64 ZIP is samengesteld en op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd. De volledige masterprompt is nog niet afgerond.
+De broncode is verder ontwikkeld na het Windows-checkpoint: wachtrij en activiteitenlog gebruiken nu virtualisatie met variabele rijhoogtes. **43/43 Electron/Xvfb-scenario’s geslaagd (2,0 min)**; na aanscherping van één focusassertie ook **3/3 gerichte wachtrijtests geslaagd (7,6 s)**. Typecheck en applicatiebuild slagen; onafhankelijke A-review akkoord. De eerdere volledige Vitest-run blijft **408/408**; backendcode is in deze ronde niet gewijzigd. De gedeelde Windows-ZIP hoort bij checkpoint `e5022c9` en bevat deze nieuwe virtualisatie nog niet. Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd; de volledige masterprompt is nog niet afgerond.
 
 Netwerktoegang voor npm en Electron is opgelost via expliciete uitvoeringsgoedkeuring. Geen cloudmigratie nodig. De laatste ontwikkelronde omvat MLST-metadata, incrementele SQLite-queue, veilig remote aanmaken/kopiëren/verplaatsen, DOM-boom, externe CSS-patches, alleen-lezen bestandsdiff, instelbare kolommen en code/canvasverdeling. Nieuwere hersteltekst blijft bij opslaan behouden. De onafhankelijke A-reviews zijn akkoord; gerichte en volledige tests staan in TESTRESULTS.md.
 
@@ -67,3 +67,9 @@ Electron-GUI-scenario’s onder Linux/Xvfb slaagden afzonderlijk voor SQLite-met
 ## Oplevercheckpoint — 10 oktober 2026, 13:22 UTC
 
 De actuele Windows-ZIP is gedeeld voor de door de gebruiker gevraagde visuele check. Inhoud en integriteit zijn gecontroleerd; geen Windows-uitvoering geclaimd. Broncode, Git-bundle en overdrachtsarchief worden voor dit checkpoint vernieuwd. De gebruiker kan zelfstandig de interface beoordelen terwijl de resterende P0/P1-eisen en Windows-validatie open blijven.
+
+## Downloadherstel en vervolgontwikkeling — 10 oktober 2026
+
+De gebruiker kon de eerdere lokale artifactlink niet downloaden. De volledige ZIP overschreed de 100 MiB-grens van de Google Drive-uploadroute. Twee binaire delen zijn daarom naar het gekoppelde Drive-account geüpload en met metadata-readback gecontroleerd. Hun gezamenlijke SHA-256 is gelijk aan de oorspronkelijke ZIP. De gebruiker heeft bevestigd dat beide downloads werken. Samenvoeginstructies en links staan in [docs/DOWNLOAD.md](docs/DOWNLOAD.md). Het oorspronkelijke Windows-checkpoint blijft ongewijzigd.
+
+Alle voorgaande subagents waren klaar; er was geen nog lopende ontwikkeling of wachtende agent. Voor het vervolg zijn de bestaande contexten `file_columns` (B) en `integration_review` (A) hervat voor virtualisatie van wachtrij en activiteitenlog. De onafhankelijke review vond randgevallen in focusverzoeken en scrollankering bij gewijzigde rijhoogtes; beide zijn hersteld en de finale A-review is akkoord. De hoofdagent heeft typecheck/build, 43/43 volledige desktoptests en daarna 3/3 aangescherpte wachtrijtests succesvol uitgevoerd. De volledige masterprompt blijft open.
