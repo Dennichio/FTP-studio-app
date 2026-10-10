@@ -6,6 +6,38 @@ function select(source: string, tag: string, nth = 0) {
   return { nodeId: map.nodes.filter(n => n.tag === tag)[nth].id, expectedSourceHash: map.sourceHash };
 }
 describe('source-preserving HTML editing', () => {
+  it('maps the explicit full-document hierarchy after a UTF-8 BOM without shifting offsets', () => {
+    const source = '\uFEFF<!doctype html>\r\n<html>\r\n<head><title>Test</title></head>\r\n<body>\r\n<main id="outer"><p title=\'oud\'>Tekst</p></main>\r\n</body>\r\n</html>\r\n';
+    const map = buildSourceMap(source);
+    expect(map.issues).toEqual([]);
+    expect(map.editable).toBe(true);
+    const node = (tag: string) => map.nodes.find(n => n.tag === tag)!;
+    expect(map.roots).toEqual([node('html').id]);
+    expect(node('html').children).toEqual([node('head').id, node('body').id]);
+    expect(node('body').children).toEqual([node('main').id]);
+    expect(node('main').parentId).toBe(node('body').id);
+    expect(node('p').parentId).toBe(node('main').id);
+    for (const n of map.nodes) {
+      expect(n.start).toBe(source.indexOf(`<${n.tag}`));
+      expect(n.id).toBe(`n${n.start}`);
+      expect(source.slice(n.closeStart, n.end)).toBe(`</${n.tag}>`);
+    }
+    const changed = applySourcePatch(source, { ...select(source, 'p'), type: 'setAttribute', name: 'title', value: 'nieuw' });
+    expect(Buffer.from(changed)).toEqual(Buffer.from(source.replace("title='oud'", 'title="nieuw"')));
+    const preview = buildVisualDocument(source);
+    expect(preview.replace(/ data-ftp-node="n\d+"/g, '')).toBe(source);
+    expect(preview).toContain(`<html data-ftp-node="${node('html').id}">`);
+    expect(() => applySourcePatch(source.slice(1), { ...select(source, 'p'), type: 'remove' })).toThrow(/bron is gewijzigd/);
+  });
+  it('preserves BOM, CRLF and interior U+FEFF text during a source move', () => {
+    const block = '<p title=\'origineel\'>A\uFEFFB</p>';
+    const source = '\uFEFF<!doctype html>\r\n<html><head><title>Test</title></head><body>\r\n<main>' + block + '</main>\r\n<section></section>\r\n</body></html>\r\n';
+    const map = buildSourceMap(source);
+    const moved = applySourcePatch(source, { ...select(source, 'p'), type: 'move', targetId: map.nodes.find(n => n.tag === 'section')!.id, position: 'inside' });
+    expect(Buffer.from(moved)).toEqual(Buffer.from(source.replace(block, '').replace('<section></section>', `<section>${block}</section>`)));
+    expect(buildSourceMap(moved).editable).toBe(true);
+    expect(buildSourceMap(source.replace('<body>', '<body>\uFEFF')).nodes.find(n => n.tag === 'main')?.start).toBe(source.indexOf('<main>') + 1);
+  });
   it('inserts static building blocks while preserving original source bytes', () => {
     const source = '<!doctype html>\r\n<html><head><title>Test</title></head><body class="existing"><p>Origineel</p></body></html>';
     const block = '<section class="columns"><div>Links</div><div>Rechts</div></section>';

@@ -113,3 +113,78 @@ describe('conservative publish planning', () => {
     await expect(planner.recordCompletion(job)).rejects.toThrow('Lokaal bestand is na overdracht gewijzigd'); expect(values.size).toBe(0);
   });
 });
+
+describe('PHP dependencies in real publish plans', () => {
+  it('selects transitive PHP, static markup and CSS dependencies while preserving exact bytes', async () => {
+    const { root, project, planner } = await setup();
+    await fs.mkdir(path.join(root, 'parts'));
+    const index = Buffer.from("\ufeff<?php\r\nrequire_once __DIR__ . '/parts/header.inc';\r\n?><link href=\"style.css\">\r\n");
+    const header = Buffer.from("<?php include '../tail.php'; ?><img src=\"../logo.png\">");
+    await fs.writeFile(path.join(root, 'index.php'), index);
+    await fs.writeFile(path.join(root, 'parts/header.inc'), header);
+    await fs.writeFile(path.join(root, 'tail.php'), "<?php require 'index.php';");
+    await fs.writeFile(path.join(root, 'style.css'), 'body { background: url(background.png); }');
+    for (const file of ['logo.png', 'background.png', 'unrelated.txt']) await fs.writeFile(path.join(root, file), file);
+    const plan = await planner.createPlan(project, 'connection', { direction: 'upload', includeDependencies: true, paths: ['index.php'] });
+    expect(plan.items.filter(item => item.selected).map(item => item.relativePath)).toEqual(['background.png', 'index.php', 'logo.png', 'parts/header.inc', 'style.css', 'tail.php']);
+    expect(plan.items.find(item => item.relativePath === 'parts/header.inc')?.dependency).toBe(true);
+    expect(plan.warnings ?? []).toEqual([]);
+    expect(await fs.readFile(path.join(root, 'index.php'))).toEqual(index);
+    expect(await fs.readFile(path.join(root, 'parts/header.inc'))).toEqual(header);
+  });
+
+  it('preserves literal percent/hash filenames separately from markup URL decoding', async () => {
+    const { root, project, planner } = await setup();
+    await fs.writeFile(path.join(root, 'index.php'), `<?php include 'literal%20name.php'; require 'literal#name.php'; ?><img src="image%20name.png?v=1#preview">`);
+    for (const file of ['literal%20name.php', 'literal name.php', 'literal#name.php', 'literal', 'image name.png']) await fs.writeFile(path.join(root, file), 'content');
+    const plan = await planner.createPlan(project, 'connection', { direction: 'upload', includeDependencies: true, paths: ['index.php'] });
+    expect(plan.items.filter(item => item.selected).map(item => item.relativePath)).toEqual(['image name.png', 'index.php', 'literal#name.php', 'literal%20name.php']);
+  });
+
+  it('reports dynamic/missing/outside includes without exposing source values or selecting forbidden dependencies', async () => {
+    const { root, project, planner } = await setup();
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'ftp-outside-')); roots.push(outside);
+    await fs.writeFile(path.join(outside, 'private.php'), 'private');
+    await fs.writeFile(path.join(root, 'index.php'), `<?php
+      require '.env'; require 'credentials.php'; include 'blocked.php'; include '${path.relative(root, outside).replaceAll('\\', '/')}/private.php';
+      require 'missing-PRIVATE_SECRET.php'; include getenv('PRIVATE_SECRET'); require 'safe.php';
+    ?>`);
+    for (const file of ['.env', 'credentials.php', 'blocked.php', 'safe.php']) await fs.writeFile(path.join(root, file), 'PRIVATE_SECRET');
+    project.filters.transfer = [{ id: 'blocked', field: 'path', operator: 'glob', value: 'blocked.php', action: 'exclude' }];
+    const plan = await planner.createPlan(project, 'connection', { direction: 'upload', includeDependencies: true, paths: ['index.php'] });
+    expect(plan.items.filter(item => item.selected).map(item => item.relativePath)).toEqual(['index.php', 'safe.php']);
+    for (const file of ['.env', 'credentials.php', 'blocked.php']) {
+      expect(plan.items.find(item => item.relativePath === file)?.excluded).toBe(true);
+      expect(plan.items.find(item => item.relativePath === file)?.dependency).toBeUndefined();
+    }
+    expect(plan.warnings?.join(' ')).toMatch(/Dynamische/);
+    expect(plan.warnings?.join(' ')).toMatch(/ontbreekt/);
+    expect(plan.warnings?.join(' ')).toMatch(/buiten de projectmap/);
+    expect(plan.warnings?.join(' ')).toMatch(/uitgesloten/);
+    expect(plan.warnings?.every(warning => warning.startsWith('index.php: '))).toBe(true);
+    expect(plan.warnings?.join(' ')).not.toContain('PRIVATE_SECRET');
+    expect(await fs.readFile(path.join(outside, 'private.php'), 'utf8')).toBe('private');
+    await expect(planner.requestsForPlan(plan.id, ['credentials.php'], true)).rejects.toThrow();
+  });
+
+  it.runIf(process.platform !== 'win32')('does not follow symlink includes or their transitive contents', async () => {
+    const { root, project, planner } = await setup();
+    await fs.writeFile(path.join(root, 'index.php'), "<?php include 'link.php';");
+    await fs.writeFile(path.join(root, 'target.php'), "<?php include 'other.php';");
+    await fs.writeFile(path.join(root, 'other.php'), 'other');
+    await fs.symlink(path.join(root, 'target.php'), path.join(root, 'link.php'));
+    const plan = await planner.createPlan(project, 'connection', { direction: 'upload', includeDependencies: true, paths: ['index.php'] });
+    expect(plan.items.filter(item => item.selected).map(item => item.relativePath)).toEqual(['index.php']);
+    expect(plan.items.find(item => item.relativePath === 'link.php')?.excluded).toBe(true);
+    expect(plan.warnings?.join(' ')).toMatch(/uitgesloten/);
+  });
+
+  it('reports incomplete dependencies when publishing the whole project and bounds diagnostics', async () => {
+    const { root, project, planner } = await setup();
+    await Promise.all(Array.from({ length: 205 }, (_, index) => fs.writeFile(path.join(root, `page-${index}.php`), '<?php include $dynamic;')));
+    const plan = await planner.createPlan(project, 'connection', { direction: 'upload', includeDependencies: true });
+    expect(plan.warnings).toHaveLength(201);
+    expect(plan.warnings?.at(-1)).toMatch(/afgekapt/);
+    expect(plan.items.filter(item => item.selected)).toHaveLength(205);
+  });
+});

@@ -226,6 +226,7 @@ describe('protocol security', () => {
   });
   it('refuses root escapes, injected paths, unsafe server names and symlink ancestors', async () => {
     vi.spyOn(FtpClient.prototype, 'access').mockResolvedValue({ code: 230, message: 'OK' });
+    vi.spyOn(FtpClient.prototype, 'features').mockResolvedValue(new Map());
     const listing = vi.spyOn(FtpClient.prototype, 'list').mockImplementation(async path => {
       if (path === '/') return [{ name: 'root', size: 0, isDirectory: true, isSymbolicLink: false }] as never;
       if (path === '/root') return [{ name: 'link', size: 1, isDirectory: false, isSymbolicLink: true }] as never;
@@ -268,6 +269,90 @@ describe('real passive FTP sessions', () => {
       await vi.waitFor(() => expect(server.downloadStarted).toBe(true)); controller.abort(); await assertion;
       await expect(session.list('/')).rejects.toThrow('gesloten');
     } finally { await session.close(); await server.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+});
+
+describe('advertised FTP single-item MLST metadata', () => {
+  it('uses fresh per-item replies instead of whole-directory data transfers', async () => {
+    const server = await ftpFixture({ supportsMlst: true, controlNoDelay: true });
+    server.directories.add('/payload');
+    for (let index = 0; index < 1000; index++) server.files.set(`/payload/file-${index}.txt`, Buffer.from('old'));
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port, remoteRoot: '/payload' }, { password: 'test' });
+      server.commandCounts.clear();
+      expect(await session.stat('/payload/file-999.txt')).toMatchObject({ kind: 'file', size: 3 });
+      server.files.set('/payload/file-999.txt', Buffer.from('new content'));
+      expect(await session.stat('/payload/file-999.txt')).toMatchObject({ kind: 'file', size: 11 });
+      expect(server.commandCounts.get('MLST')).toBe(4); // Every parent and item checked again.
+      expect(server.commandCounts.get('MLSD') ?? 0).toBe(0);
+      expect(server.commandCounts.get('LIST') ?? 0).toBe(0);
+      expect(server.commandCounts.get('FEAT') ?? 0).toBe(0); // Only capabilities are remembered.
+    } finally { await session?.close(); await server.close(); }
+  });
+  it('falls back once when advertised MLST is not implemented', async () => {
+    const server = await ftpFixture({ controlNoDelay: true }); server.files.set('/file.txt', Buffer.from('file'));
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      expect(await session.stat('/file.txt')).toMatchObject({ size: 4 });
+      expect(await session.stat('/file.txt')).toMatchObject({ size: 4 });
+      expect(server.commandCounts.get('MLST')).toBe(1);
+      expect(server.commandCounts.get('MLSD')).toBe(2);
+    } finally { await session?.close(); await server.close(); }
+  });
+  it('does not probe unadvertised MLST capabilities', async () => {
+    const server = await ftpFixture({ supportsMlst: true, advertiseMlst: false, controlNoDelay: true }); server.files.set('/file.txt', Buffer.from('file'));
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      expect(await session.stat('/file.txt')).toMatchObject({ size: 4 });
+      expect(server.commandCounts.get('MLST') ?? 0).toBe(0);
+      expect(server.commandCounts.get('LIST')).toBeGreaterThan(0);
+    } finally { await session?.close(); await server.close(); }
+  });
+  it('checks ambiguous 550 replies against current parent listings instead of assuming absence', async () => {
+    const server = await ftpFixture({ supportsMlst: true, controlNoDelay: true }); server.files.set('/existing.txt', Buffer.from('keep'));
+    server.mlstResponses.set('/existing.txt', '550 Access denied');
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      expect(await session.stat('/existing.txt')).toMatchObject({ size: 4 });
+      expect(await session.stat('/absent.txt')).toBeNull();
+      expect(server.commandCounts.get('MLSD')).toBe(2);
+    } finally { await session?.close(); await server.close(); }
+  });
+  it.each(['OS.unix=slink:/outside', 'OS.unix=symlink'])('rejects %s at the file or any ancestor without listing/following it', async type => {
+    const server = await ftpFixture({ supportsMlst: true, controlNoDelay: true });
+    server.mlstResponses.set('/link', `250-Listing\r\n type=${type}; /link\r\n250 End`);
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      await expect(session.stat('/link')).rejects.toThrow('Symbolische');
+      await expect(session.stat('/link/private.txt')).rejects.toThrow('Symbolische');
+      expect(server.commandCounts.get('MLSD') ?? 0).toBe(0);
+      expect(server.commandCounts.get('RETR') ?? 0).toBe(0);
+    } finally { await session?.close(); await server.close(); }
+  });
+  it('fails closed on a malformed successful reply without downgrading to listing metadata', async () => {
+    const server = await ftpFixture({ supportsMlst: true, controlNoDelay: true }); server.files.set('/file.txt', Buffer.from('keep'));
+    server.mlstResponses.set('/file.txt', '250-Listing\r\n type=file;type=dir;size=4; /file.txt\r\n250 End');
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      await expect(session.stat('/file.txt')).rejects.toThrow('MLST-metadata');
+      expect(server.commandCounts.get('MLSD') ?? 0).toBe(0);
+    } finally { await session?.close(); await server.close(); }
+  });
+  it('does not reinterpret temporary MLST failures as missing files', async () => {
+    const server = await ftpFixture({ supportsMlst: true, controlNoDelay: true });
+    server.mlstResponses.set('/file.txt', '450 Temporarily unavailable');
+    let session: RemoteSession | undefined;
+    try {
+      session = await createProtocolSession({ ...profile, port: server.port }, { password: 'test' });
+      await expect(session.stat('/file.txt')).rejects.toMatchObject({ code: 450 });
+      expect(server.commandCounts.get('MLSD') ?? 0).toBe(0);
+    } finally { await session?.close(); await server.close(); }
   });
 });
 

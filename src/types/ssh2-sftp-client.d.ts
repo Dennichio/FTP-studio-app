@@ -33,6 +33,7 @@ declare module 'ssh2-sftp-client' {
 
   namespace SftpClient {
     interface FileInfo {
+      longname?: string;
       // v12 derives this from the server's longname, including special types.
       type: string;
       name: string;

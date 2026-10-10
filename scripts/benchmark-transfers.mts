@@ -13,11 +13,12 @@ import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import type { ConnectionProfile, KeyValueStore, RemoteSession, TransferJob, TransferRequest } from '../src/shared/contracts';
+import type { ConnectionProfile, KeyValueStore, QueuePersistence, RemoteSession, TransferJob, TransferRequest } from '../src/shared/contracts';
 
 const { values } = parseArgs({ options: {
   help: { type: 'boolean', short: 'h' }, quick: { type: 'boolean' },
   parallel: { type: 'string', default: '1,2,4,8' }, direction: { type: 'string', default: 'both' },
+  scenario: { type: 'string', default: 'both' }, 'control-no-delay': { type: 'boolean', default: false }, mlst: { type: 'boolean', default: false }, store: { type: 'string', default: 'memory' },
   'small-count': { type: 'string' }, 'small-bytes': { type: 'string', default: '4096' },
   'large-count': { type: 'string' }, 'large-bytes': { type: 'string', default: '1048576' },
   'timeout-ms': { type: 'string', default: '600000' }, output: { type: 'string' },
@@ -26,6 +27,10 @@ if (values.help) {
   console.log(`Gebruik: node --no-warnings scripts/benchmark-transfers.mts [opties]
   --parallel 1,2,4,8        Aantal parallelle overdrachten; standaard alle vier
   --direction both         upload, download of both
+  --scenario both          small, large of both; draait alleen de gekozen dataset
+  --control-no-delay       TCP_NODELAY op fixture-controlverbindingen (standaard uit)
+  --mlst                   Ondersteun verse single-item MLST in de testserver
+  --store memory           memory of sqlite; sqlite gebruikt het productiejournaal
   --small-count 1000       Kleine bestanden per scenario (standaard 1.000)
   --small-bytes 4096       Bytes per klein bestand
   --large-count 16         Grote bestanden per scenario
@@ -36,7 +41,9 @@ if (values.help) {
 
 Echte TCP-verbindingen naar 127.0.0.1 en tijdelijke lokale bestanden.
 De FTP-testserver bewaart data in geheugen; dit meet geen internet- of serverdiskprestaties.
-De wachtrij gebruikt JSON-serialisatie bij iedere opslag; SQLite/fsync-kosten zijn niet gemeten.`);
+Memory gebruikt JSON-snapshots; sqlite gebruikt echte incrementele WAL/FULL-transacties.
+TCP_NODELAY verandert alleen de lokale fixture, niet de productieclient. Rapporteer beide modi apart.
+Eén run op een gedeelde ontwikkelhost toont geen optimaal productieprofiel.`);
   process.exit(0);
 }
 
@@ -47,11 +54,14 @@ function integer(value: string | undefined, fallback: number, label: string, max
 }
 const parallelisms = [...new Set(values.parallel!.split(',').map(value => integer(value, 1, 'parallel', 8)))];
 if (!['upload', 'download', 'both'].includes(values.direction!)) throw new Error('direction moet upload, download of both zijn.');
+if (!['small', 'large', 'both'].includes(values.scenario!)) throw new Error('scenario moet small, large of both zijn.');
+if (!['memory', 'sqlite'].includes(values.store!)) throw new Error('store moet memory of sqlite zijn.');
 const directions: Array<'upload' | 'download'> = values.direction === 'both' ? ['upload', 'download'] : [values.direction as 'upload' | 'download'];
-const scenarios = [
+const allScenarios = [
   { name: 'grote-bestanden', count: integer(values['large-count'], values.quick ? 2 : 16, 'large-count', 10_000), bytes: integer(values['large-bytes'], 1048576, 'large-bytes', 64 * 1024 * 1024) },
   { name: 'kleine-bestanden', count: integer(values['small-count'], values.quick ? 8 : 1000, 'small-count', 10_000), bytes: integer(values['small-bytes'], 4096, 'small-bytes', 1024 * 1024) },
 ];
+const scenarios = allScenarios.filter(scenario => values.scenario === 'both' || scenario.name === (values.scenario === 'small' ? 'kleine-bestanden' : 'grote-bestanden'));
 for (const scenario of scenarios) if (scenario.bytes * scenario.count > 512 * 1024 * 1024) throw new Error('De dataset mag maximaal 512 MiB per scenario zijn.');
 const timeoutMs = integer(values['timeout-ms'], 600000, 'timeout-ms', 3_600_000);
 const output = path.resolve(values.output ?? path.join('benchmark-results', `ftp-${new Date().toISOString().replace(/[:.]/g, '-')}.json`));
@@ -70,8 +80,8 @@ registerHooks({
     return next(url, context);
   },
 });
-const [{ RemoteManager, createProtocolSession }, { TransferQueue }, { ftpFixture }] = await Promise.all([
-  import('../src/main/remote.ts'), import('../src/main/queue.ts'), import('../tests/fixtures/ftp-server.ts'),
+const [{ RemoteManager, createProtocolSession }, { TransferQueue }, { ftpFixture }, { SqliteStore }] = await Promise.all([
+  import('../src/main/remote.ts'), import('../src/main/queue.ts'), import('../tests/fixtures/ftp-server.ts'), import('../src/main/storage.ts'),
 ]);
 
 class JsonMemoryStore implements KeyValueStore {
@@ -84,6 +94,34 @@ class JsonMemoryStore implements KeyValueStore {
     this.writes++; this.serializedBytes += Buffer.byteLength(serialized); this.values.set(key, serialized);
   }
   delete(key: string): void { this.values.delete(key); }
+  close(): void {}
+}
+class MeasuredSqliteStore implements KeyValueStore {
+  private inner: InstanceType<typeof SqliteStore>;
+  readonly queue: QueuePersistence;
+  writes = 0; serializedBytes = 0; serializationMs = 0; commitMs = 0;
+  constructor(filename: string) {
+    this.inner = new SqliteStore(filename);
+    this.queue = {
+      load: () => this.inner.queue.load(),
+      commit: (upserts, removed) => {
+        if (upserts.length || removed.length) {
+          // Counting serializes only the changed records once more; measured
+          // runtime includes this instrumentation overhead, separately reported.
+          const countStarted = performance.now();
+          this.serializedBytes += upserts.reduce((bytes, record) => bytes + Buffer.byteLength(JSON.stringify(record)), 0);
+          this.serializationMs += performance.now() - countStarted;
+          const started = performance.now();
+          this.inner.queue.commit(upserts, removed);
+          this.commitMs += performance.now() - started; this.writes++;
+        } else this.inner.queue.commit(upserts, removed);
+      },
+    };
+  }
+  get<T>(key: string, fallback: T): T { return this.inner.get(key, fallback); }
+  set<T>(key: string, value: T): void { this.inner.set(key, value); }
+  delete(key: string): void { this.inner.delete(key); }
+  close(): void { this.inner.close(); }
 }
 type Scenario = typeof scenarios[number];
 type Direction = typeof directions[number];
@@ -97,7 +135,7 @@ function digest(bytes: Buffer): string { return createHash('sha256').update(byte
 async function benchmark(scenario: Scenario, parallel: number, direction: Direction) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ftp-studio-benchmark-'));
   const localRoot = path.join(directory, 'local'); await fs.mkdir(localRoot);
-  const server = await ftpFixture(); server.directories.add('/payload');
+  const server = await ftpFixture({ controlNoDelay: values['control-no-delay'], supportsMlst: values.mlst }); server.directories.add('/payload');
   const profile: ConnectionProfile = { id: 'benchmark-loopback', name: 'Loopback-benchmark', host: '127.0.0.1', port: server.port,
     protocol: 'ftp', username: 'benchmark', localRoot, remoteRoot: '/payload', timeoutMs: 15000,
     parallelTransfers: parallel, connectionLimit: parallel + 1, autoReconnect: false, passive: true };
@@ -119,7 +157,7 @@ async function benchmark(scenario: Scenario, parallel: number, direction: Direct
       };
     } });
   });
-  const store = new JsonMemoryStore();
+  const store = values.store === 'sqlite' ? new MeasuredSqliteStore(path.join(directory, 'queue.db')) : new JsonMemoryStore();
   let resolveComplete!: () => void;
   const complete = new Promise<void>(resolve => { resolveComplete = resolve; });
   let notifications = 0;
@@ -185,28 +223,31 @@ async function benchmark(scenario: Scenario, parallel: number, direction: Direct
     if ([...server.files.keys()].some(name => name.includes('.ftp-studio-'))) throw new Error('Tijdelijke serverbestanden zijn na succes achtergebleven.');
     if (stats.peakTransfers > parallel || stats.peakSessions > profile.connectionLimit) throw new Error('Gemeten paralleliteit overschrijdt de ingestelde limiet.');
     const bytes = scenario.count * scenario.bytes;
-    return { scenario: scenario.name, direction, parallel, files: scenario.count, fileBytes: scenario.bytes, bytes,
+    return { scenario: scenario.name, direction, parallel, controlNoDelay: !!values['control-no-delay'], mlst: !!values.mlst, store: values.store, files: scenario.count, fileBytes: scenario.bytes, bytes,
       enqueueMs, transferMs: totalMs - enqueueMs, totalMs, filesPerSecond: scenario.count / (totalMs / 1000), mebibytesPerSecond: bytes / 1048576 / (totalMs / 1000),
       cpuMs: (cpu.user + cpu.system) / 1000, eventLoopUtilization: utilization.utilization,
       eventLoopDelayP99Ms: delays.percentile(99) / 1e6, eventLoopDelayMaxMs: delays.max / 1e6,
       baselineRssBytes: baselineRss, peakRssBytes: peakRss, queueNotifications: notifications,
-      persistence: { writes: store.writes, serializedBytes: store.serializedBytes, serializationMs: store.serializationMs },
+      persistence: { backend: values.store, writes: store.writes, serializedBytes: store.serializedBytes, serializationMs: store.serializationMs, ...(store instanceof MeasuredSqliteStore ? { commitMs: store.commitMs } : {}) },
       navigation: { samples: navigationSamples.length, p50Ms: percentile(navigationSamples, 0.5), p95Ms: percentile(navigationSamples, 0.95), maxMs: navigationSamples.length ? Math.max(...navigationSamples) : null, errors: navigationErrors },
-      protocol: { sessionOpens: stats.sessionOpens, peakSessions: stats.peakSessions, peakTransfers: stats.peakTransfers, operations: stats.operations }, verifiedFiles: requests.length };
+      protocol: { sessionOpens: stats.sessionOpens, peakSessions: stats.peakSessions, peakTransfers: stats.peakTransfers, operations: stats.operations, commands: Object.fromEntries(server.commandCounts) }, verifiedFiles: requests.length };
   } finally {
     if (watchdog) clearTimeout(watchdog);
     if (memoryTimer) clearInterval(memoryTimer);
     if (navigationTimer) clearInterval(navigationTimer);
     delays.disable();
-    await queue.close(); await pendingNavigation; await remote.close(); await server.close();
+    await queue.close(); await pendingNavigation; await remote.close(); await server.close(); store.close();
     await fs.rm(directory, { recursive: true, force: true });
   }
 }
 
 const report = { startedAt: new Date().toISOString(), environment: { node: process.version, platform: process.platform, release: os.release(), architecture: process.arch, logicalCpus: os.cpus().length },
-  limitations: ['Alle verbindingen lopen via TCP naar 127.0.0.1; geen internetmeting.', 'FTP-serverdata staan in RAM; lokale staging gebruikt echte tijdelijke bestanden.', 'Wachtrijopslag serialiseert JSON in geheugen; SQLite- en opslag-fsynckosten zijn niet inbegrepen.', 'Geen TLS/SSH-overhead, Windows-validatie of productieservercompatibiliteitsclaim.', 'Per scenario één gemeten run; geen statistische betrouwbaarheidsintervallen.'],
+  limitations: ['Alle verbindingen lopen via TCP naar 127.0.0.1; geen internetmeting.', 'FTP-serverdata staan in RAM; lokale staging gebruikt echte tijdelijke bestanden.', values.store === 'sqlite' ? 'Echte SQLite WAL/FULL-transacties; volume-instrumentatie serialiseert gewijzigde records één extra keer.' : 'Wachtrijopslag serialiseert JSON in geheugen; SQLite- en opslag-fsynckosten zijn niet inbegrepen.', 'Geen TLS/SSH-overhead, Windows-validatie of productieservercompatibiliteitsclaim.', 'Per scenario één gemeten run; geen statistische betrouwbaarheidsintervallen.', 'Gedeelde ontwikkelhost: andere processen kunnen de metingen beïnvloeden; geen optimaal productieprofiel afgeleid.', 'FTP-control-TCP_NODELAY is een expliciete fixture-instelling; resultaten meten mede lokale roundtrip- en delayed-ACK-effecten. TCP_NODELAY verandert uitsluitend de testserver, niet de productieclient.'],
+  configuration: { controlNoDelay: !!values['control-no-delay'], mlst: !!values.mlst, store: values.store, scenario: values.scenario, directions, parallelisms, datasets: scenarios, timeoutMs },
   quick: !!values.quick, results: [] as Awaited<ReturnType<typeof benchmark>>[], error: undefined as string | undefined };
 console.log('Loopback FTP-benchmark: echte TCP, tijdelijke lokale bestanden, alle uitvoerbestanden gecontroleerd met SHA-256.');
+console.log(`Fixture control TCP_NODELAY: ${values['control-no-delay'] ? 'aan' : 'uit (oorspronkelijk gedrag)'}. Dataset: ${values.scenario}. Eén run per geval op een gedeelde ontwikkelhost; geen productie-optimum.`);
+console.log(`Metadata MLST: ${!!values.mlst}; opslag: ${values.store}.`);
 if (values.quick) console.log('Rooktestmodus: dit is geen benchmark met 1.000 bestanden.');
 await fs.mkdir(path.dirname(output), { recursive: true });
 try {

@@ -1,6 +1,10 @@
 # Werkelijk uitgevoerde controles
 
-Historie vanaf 9 oktober 2026; nieuwste resultaten staan onderaan. Omgeving: Linux x64, Node.js 24.19.0, npm 11.9.0. Windows en Electron zijn niet gestart.
+Historie vanaf 9 oktober 2026; nieuwste resultaten staan onderaan. Omgeving: Linux x64, Node.js 24.19.0, npm 11.9.0. Electron is inmiddels onder Linux/Xvfb gestart; Windows niet.
+
+## Historische beginstand — 9 oktober 2026
+
+De volgende secties tot de actuele hercontrole beschrijven hun toenmalige controlemoment. Uitspraken over ontbrekende dependencies, niet gestarte Electron of niet uitgevoerde tests zijn geen actuele status.
 
 | Controle | Resultaat | Bewijs / grens |
 |---|---|---|
@@ -28,9 +32,9 @@ De remote testdubbel simuleert fouten en metadata expliciet; deze bewijst geen s
 
 `tests/source.test.ts`, `workspace.test.ts`, `publishing.test.ts`, `remote.test.ts`, `remoteSearch.test.ts`, `queue.test.ts`, `main.test.ts` en `security.test.ts` bevatten gerichte unit-/integratiegevallen. `tests/e2e/desktop.spec.ts` start de echte Electron-app en gebruikt geïsoleerde projectbestanden. `tests/e2e/renderer.spec.ts` voegt echte lokale bestandslijsten, 1.400 bestanden, Monaco/BOM/CRLF/undo, paneelherstel, Save As en aparte paden met twee lokale FTP-fixtures toe. De OS-pickerresponse wordt voor Save As gecontroleerd ingevuld; service/IPC/bestands-I/O blijven echt. Deze suites zijn pas geslaagd als hun echte runners succesvol zijn uitgevoerd. Hun aanwezigheid is geen performance- of desktopresultaat.
 
-## Meetresultaten
+## Historische meetstatus vóór de benchmarkruns
 
-Er zijn nog geen representatieve metingen van FTP/SFTP-doorvoer, duizendbestandoverdrachten, geheugengebruik of Windows-opstarttijd. De standaard vier transfers is een configureerbare ontwerpkeuze, geen op deze omgeving bewezen optimum.
+Op het toenmalige controlemoment waren er nog geen metingen. De actuele twee FTP-loopbackmatrices zijn vastgelegd in `docs/BENCHMARKS.md`; de standaard vier transfers blijft een configureerbare keuze, geen bewezen algemeen optimum.
 
 ## Aanvullende reviewcontroles, 9 oktober 2026
 
@@ -51,17 +55,17 @@ Deze aanvulling bewaart de eerdere resultaten hierboven. Een herhaalde run telt 
 | Laatste TypeScript-syntaxtransformatie door hoofdagent | 29 bron-/testbestanden geslaagd | Node stripTypeScriptTypes; vervangt geen TSX-build of semantische typecheck. De eerdere 26 was de vorige momentopname. |
 | `node --no-warnings scripts/verify-workspace-permissions-offline.mjs` | Workspaceagent rapporteert 3/3 geslaagd | Echte workspacebron en tijdelijke POSIX-bestanden: umask 077 behoudt mode 0664; concurrente beperking naar 0600 vóór verplaatsen en op de verplaatste backup wordt geweigerd/behouden. A-reviewer heeft de extra pre/post-renamecontroles gelezen. Geen Windows-ACL/owner/attributentest. |
 
-`scripts/benchmark-transfers.mts` is voorbereid voor echte loopback-FTP-uploads/downloads met 1/2/4/8 parallelle transfers, standaard 1.000 kleine en 16 grotere bestanden, hashverificatie, navigatielatentie en procesmetingen. Het is nog niet uitgevoerd. De server bewaart bytes in RAM; queue-opslag meet JSON-serialisatie in geheugen, geen SQLite/fsync. Zelfs een latere geslaagde run zou daarmee geen internet-, TLS/SSH-, Windows- of productieserverbenchmark zijn. `--quick` is uitsluitend een kleine rooktest.
+Op dit historische controlemoment was `scripts/benchmark-transfers.mts` voorbereid maar nog niet uitgevoerd. De latere, uitgevoerde matrices staan in `docs/BENCHMARKS.md`. De server bewaart bytes in RAM; queue-opslag meet JSON-serialisatie in geheugen, geen SQLite/fsync. Zelfs een latere geslaagde run zou daarmee geen internet-, TLS/SSH-, Windows- of productieserverbenchmark zijn. `--quick` is uitsluitend een kleine rooktest.
 
 De P0/P1-dekkingsmatrix in [SPECIFICATION.md](SPECIFICATION.md) bevat ook ontbrekende functies. Slagende infrastructuurtests sluiten die productgaten niet.
 
-## Hercontrole — 10 oktober 2026
+## Historische hercontrole vóór installatie — 10 oktober 2026
 
 De hoofdagent heeft de vijf meegeleverde offline scripts uitgevoerd: kern **5/5**, wachtrij **39/39**, servermetadatazoeken **7/7**, sessiemanager **10/10**, POSIX-rechten **5/5**. De laatste set is uitgebreid van drie naar vijf gevallen: late chmod van de verplaatste oorspronkelijke inode wordt gedetecteerd, en een nieuwe inode op hetzelfde doelpad wordt niet gechmod. De nieuwe onafhankelijke A-reviewer heeft de rechten- en kernsets eveneens uitgevoerd en de gewijzigde handlelevensduur statisch goedgekeurd. De bijbehorende Vitest-regressies zijn geschreven, maar niet via Vitest uitgevoerd.
 
 `npm ls --depth=0 --offline` bevestigt nog steeds **18 ontbrekende directe dependencies**. De netwerktoegangsaanvraag voor installatie is afgebroken zonder installatieresultaat. Er is geen nieuwe lockfile, volledige typecheck, Electron-start, live protocolbenchmark of Windows-build. De eerdere aantallen zijn historische testmomenten en mogen niet bij deze herhalingen worden opgeteld.
 
-## Volledige verificatie na netwerkgoedkeuring — 10 oktober 2026
+## Historische verificatie na netwerkgoedkeuring — 10 oktober 2026
 
 | Controle | Werkelijk resultaat | Grens |
 |---|---|---|
@@ -77,4 +81,27 @@ Suiteaantallen: remote 40, queue 39, workspace 23, security 6, main 13, publishi
 
 De standaard-sandboxrun is afgebroken nadat protocoltestservers niet bruikbaar konden starten; er wordt daarvoor geen geslaagde volledige run geclaimd. De relevante fixtures weigeren voortaan expliciet een mislukte listen-aanvraag.
 
-Deze actuele resultaten vervangen de eerdere status 'dependencies ontbreken/typecheck niet uitgevoerd'. De historische tabellen blijven staan als verslag. Desktop-e2e, GUI/DPI, Windows DPAPI en Windows-distributie zijn nog niet getest; resterende producteisen blijven open.
+Deze resultaten vervingen op dat moment de eerdere status 'dependencies ontbreken/typecheck niet uitgevoerd'. De historische tabellen blijven staan als verslag. Desktop-e2e, GUI/DPI, Windows DPAPI en Windows-distributie zijn nog niet getest; resterende producteisen blijven open.
+
+
+## Huidige hercontrole — 10 oktober 2026
+
+| Controle | Werkelijk resultaat | Grens |
+|---|---|---|
+| TypeScript en applicatiebuild | Geslaagd | Linux; Windows-runtime niet getest. |
+| Volledige Vitest | **408/408, 19 suites, 63,29 s, exit 0** | Inclusief echte lokale FTP/FTPS/SFTP-transporten, nieuwe readonly vergelijking, queue-opslagfouten en herstelrace. |
+| Volledige desktopronde | **38/40, 2,8 min** | Twee nieuwe diffscenario’s faalden op ontbrekende ARIA-labels; overige 35 scenario’s buiten diff plus drie diffscenario’s slaagden. |
+| Gerichte desktophercontrole na fix | **5/5 diffscenario’s, 20,1 s, exit 0** | Labels hersteld, daadwerkelijke geweigerde invoer, clipboard, bytes, hersteltekst en uploadbasis gecontroleerd. Geen nieuwe volledige 40/40-run geclaimd. |
+| Onafhankelijke A-reviews | Geen resterende blokkades in geïntegreerde delta’s | Source/queue/security/diff/recovery/kolommen/split/code-koppeling; geen platformcertificering. |
+| npm productieaudit | **0 gemelde kwetsbaarheden** na updates | Momentopname van npm-advisories, geen volledige beveiligingsgarantie. |
+| Sanitizerbundel | DOMPurify **3.4.16**, originele Monaco-kopie uitgesloten | Metafilecontrole in build, versie vastgelegd in `dist/renderer/dependency-inputs.json`; alle vijf workers weigeren sanitizerimports. |
+| Transferbenchmarks | Twee matrices: **16 scenario’s, 8.128 SHA-256-controles per matrix** | Loopback FTP, één run per geval; gezamenlijke MLST/SQLite/UI-optimalisatie. Zie BENCHMARKS.md. |
+| Windows ZIP | Zelfstandige x64 cross-build geslaagd; ZIP-CRC en SHA-256 gecontroleerd, 6.148 asar-items, geen native addons, vijf editorworkers | Geen Windows-start, DPAPI, DPI of Windows-crashtest; geen code signing. |
+
+De veiligheidsupdates zijn basic-ftp 6.2.3 en DOMPurify 3.4.16. Monaco blijft 0.55.1; omdat het een eigen oude DOMPurify-kopie bevat, wordt die import tijdens de build gericht vervangen. FTP weigert afwijkende PASV-datahosts standaard. De live protocoltests slagen met die veilige instelling.
+
+Nieuwe recoverytests houden een werkelijk uitgevoerde lokale bestandinstallatie tegen bij de antwoordgrens, schrijven ondertussen hersteltekst en controleren SQLite plus bestanden. Daardoor is behoud tijdens Save en Save As, inclusief remote werkcache, aantoonbaar getest. De serververgelijking verandert de werkcache, hersteltekst en uploadbasis niet.
+
+Benchmarkresultaten bewijzen geen algemeen paralleliteitsoptimum of prestaties op Windows/internet/TLS/SSH. Een latere FTP-library-update is niet opnieuw met de complete benchmarkmatrix gemeten. Functionele protocolregressies zijn wel opnieuw uitgevoerd.
+
+Het definitieve Windows-archief is 162.798.357 bytes. SHA-256: `1abf46b57a49885fc5c7c81c59b3c137d0f4b121724d97a4acfedb994ddaeead`. Verificatie van de x64 PE-header en bytegelijkheid tussen alle verpakte rendererassets en de actuele build slaagde. Zie `docs/WINDOWS-BUILD-CHECK.json`.

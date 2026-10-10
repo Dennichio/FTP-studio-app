@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-10-10T13:21:02.908Z",
+  "platform": "Windows x64 PE, cross-built on Linux; not executed on Windows",
+  "asarEntries": 6148,
+  "nativeAddons": 0,
+  "monacoWorkers": 5,
+  "basicFtp": "6.2.3",
+  "sanitizer": {
+    "dompurify": "3.4.16",
+    "inputs": [
+      "node_modules/dompurify/dist/purify.es.mjs"
+    ]
+  },
+  "asarSha256": "38d280605e9f2a600b7fb4d9873e27f87553ee11990c3ce2e47a90b82253cb98",
+  "zip": "FTP-Studio-1.0.0-win-x64.zip",
+  "zipBytes": 162798357,
+  "zipSha256": "1abf46b57a49885fc5c7c81c59b3c137d0f4b121724d97a4acfedb994ddaeead",
+  "zipCrc": "all entries passed"
+}

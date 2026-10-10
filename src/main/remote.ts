@@ -10,6 +10,7 @@ import { Client as FtpClient, FileInfo } from 'basic-ftp';
 import SftpClient from 'ssh2-sftp-client';
 import type { ConnectionProfile, ConnectionState, Credentials, FileEntry, Logger, RemoteAccess, RemoteSession, SessionLease, TransferProgress } from '../shared/contracts';
 import { endpointIdentity } from '../core/connectionIdentity';
+import { parseMlstMetadata } from '../core/ftpMetadata';
 
 export type SessionFactory = (profile: ConnectionProfile, credentials: Credentials) => Promise<RemoteSession>;
 type Purpose = 'navigation' | 'transfer';
@@ -355,14 +356,34 @@ async function verifyLocalOffset(path: string, offset: number): Promise<void> {
   if (offset && (await localStat(path)).size !== offset) throw new Error('Lokale bestandsgrootte wijkt af van de hervatpositie.');
 }
 
-/** FTP metadata relies on MLSD/LIST. Servers omitting link types cannot provide race-free containment. */
+/** Fresh single-item MLST where advertised, otherwise MLSD/LIST. No metadata cache.
+ * Servers omitting link types cannot provide race-free containment. */
 class FtpSession extends ProtocolSession {
+  private supportsMlst: boolean | undefined;
   constructor(profile: ConnectionProfile, private readonly client: FtpClient) { super(profile); }
   private entry(info: FileInfo, parent: string): FileEntry {
     return { name: info.name, path: childPath(parent, info.name), kind: info.isSymbolicLink ? 'symlink' : info.isDirectory ? 'directory' : 'file', size: info.size, modifiedAt: info.modifiedAt?.getTime() ?? null, precisionMs: info.modifiedAt ? 1000 : undefined };
   }
   private async rawStat(path: string): Promise<FileEntry | null> {
     if (path === '/') return { name: '/', path, kind: 'directory', size: 0, modifiedAt: null };
+    if (this.supportsMlst === undefined) {
+      const features = await this.client.features(); this.activity();
+      this.supportsMlst = [...features.keys()].some(name => name.toUpperCase() === 'MLST');
+    }
+    if (this.supportsMlst) {
+      try {
+        const response = await this.client.send(`MLST ${path}`); this.activity();
+        if (response.code !== 250) throw new Error('Onverwacht antwoord op MLST-metadataopvraag.');
+        return parseMlstMetadata(response.message, path);
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (code === 500 || code === 502 || code === 504) this.supportsMlst = false;
+        // 550 also means access denied: only a fresh parent listing can confirm
+        // absence. Never infer a safe overwrite from this ambiguous error.
+        else if (code !== 550) throw error;
+        this.activity();
+      }
+    }
     const infos = await this.client.list(posix.dirname(path));
     this.activity();
     const info = infos.find(entry => entry.name === posix.basename(path));
@@ -463,7 +484,7 @@ class SftpSession extends ProtocolSession {
         const actual = await this.rawStat(path);
         if (actual?.kind !== 'file') throw new Error('Remote bestandstype is tijdens het uitlezen gewijzigd.');
       }
-      entries.push({ name: info.name, path, kind: info.type === 'l' ? 'symlink' : info.type === 'd' ? 'directory' : 'file', size: info.size, modifiedAt: Number.isFinite(info.modifyTime) ? info.modifyTime : null, precisionMs: 1000, permissions: `${info.rights.user}${info.rights.group}${info.rights.other}` });
+      entries.push({ name: info.name, path, kind: info.type === 'l' ? 'symlink' : info.type === 'd' ? 'directory' : 'file', size: info.size, modifiedAt: Number.isFinite(info.modifyTime) ? info.modifyTime : null, precisionMs: 1000, permissions: info.longname && /^[bcdlps-][r-][w-][xsS-][r-][w-][xsS-][r-][w-][xtT-]/.test(info.longname) ? info.longname.slice(1, 10) : undefined });
     }
     return entries;
   }, signal); }

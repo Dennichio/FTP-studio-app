@@ -1,0 +1,1024 @@
+{
+  "startedAt": "2026-10-10T12:34:59.326Z",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "release": "6.18.44",
+    "architecture": "x64",
+    "logicalCpus": 3
+  },
+  "limitations": [
+    "Alle verbindingen lopen via TCP naar 127.0.0.1; geen internetmeting.",
+    "FTP-serverdata staan in RAM; lokale staging gebruikt echte tijdelijke bestanden.",
+    "Echte SQLite WAL/FULL-transacties; volume-instrumentatie serialiseert gewijzigde records één extra keer.",
+    "Geen TLS/SSH-overhead, Windows-validatie of productieservercompatibiliteitsclaim.",
+    "Per scenario één gemeten run; geen statistische betrouwbaarheidsintervallen.",
+    "Gedeelde ontwikkelhost: andere processen kunnen de metingen beïnvloeden; geen optimaal productieprofiel afgeleid.",
+    "FTP-control-TCP_NODELAY is een expliciete fixture-instelling; resultaten meten mede lokale roundtrip- en delayed-ACK-effecten. De productieclient is niet gewijzigd."
+  ],
+  "configuration": {
+    "controlNoDelay": true,
+    "mlst": true,
+    "store": "sqlite",
+    "scenario": "both",
+    "directions": [
+      "upload",
+      "download"
+    ],
+    "parallelisms": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "datasets": [
+      {
+        "name": "grote-bestanden",
+        "count": 16,
+        "bytes": 1048576
+      },
+      {
+        "name": "kleine-bestanden",
+        "count": 1000,
+        "bytes": 4096
+      }
+    ],
+    "timeoutMs": 600000
+  },
+  "quick": false,
+  "results": [
+    {
+      "scenario": "grote-bestanden",
+      "direction": "upload",
+      "parallel": 1,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 84.49166599999998,
+      "transferMs": 525.828729,
+      "totalMs": 610.320395,
+      "filesPerSecond": 26.215738702292587,
+      "mebibytesPerSecond": 26.215738702292587,
+      "cpuMs": 632.382,
+      "eventLoopUtilization": 0.720575589173744,
+      "eventLoopDelayP99Ms": 22.462463,
+      "eventLoopDelayMaxMs": 22.462463,
+      "baselineRssBytes": 97734656,
+      "peakRssBytes": 127750144,
+      "queueNotifications": 7,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 99958,
+        "serializationMs": 1.4340670000004252,
+        "commitMs": 9.98841799999974
+      },
+      "navigation": {
+        "samples": 1,
+        "p50Ms": 1.8078289999999697,
+        "p95Ms": 1.8078289999999697,
+        "maxMs": 1.8078289999999697,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 2,
+        "peakSessions": 2,
+        "peakTransfers": 1,
+        "operations": {
+          "stat": 272,
+          "upload": 16,
+          "rename": 16,
+          "list": 1
+        },
+        "commands": {
+          "OPTS": 6,
+          "USER": 2,
+          "PASS": 2,
+          "FEAT": 4,
+          "TYPE": 2,
+          "STRU": 2,
+          "MLST": 499,
+          "EPSV": 145,
+          "MLSD": 129,
+          "STOR": 16,
+          "RNFR": 16,
+          "RNTO": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "upload",
+      "parallel": 2,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 66.24856799999998,
+      "transferMs": 420.4642000000001,
+      "totalMs": 486.7127680000001,
+      "filesPerSecond": 32.873598253333675,
+      "mebibytesPerSecond": 32.873598253333675,
+      "cpuMs": 608.448,
+      "eventLoopUtilization": 0.8322216647567298,
+      "eventLoopDelayP99Ms": 20.922367,
+      "eventLoopDelayMaxMs": 20.922367,
+      "baselineRssBytes": 135745536,
+      "peakRssBytes": 137973760,
+      "queueNotifications": 6,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 100112,
+        "serializationMs": 1.2868969999998399,
+        "commitMs": 7.435325999998668
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 3,
+        "peakSessions": 3,
+        "peakTransfers": 2,
+        "operations": {
+          "stat": 272,
+          "upload": 16,
+          "rename": 16
+        },
+        "commands": {
+          "OPTS": 9,
+          "USER": 3,
+          "PASS": 3,
+          "FEAT": 6,
+          "TYPE": 3,
+          "STRU": 3,
+          "MLST": 499,
+          "EPSV": 144,
+          "MLSD": 128,
+          "STOR": 16,
+          "RNFR": 16,
+          "RNTO": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "upload",
+      "parallel": 4,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 51.52963900000009,
+      "transferMs": 369.03185400000007,
+      "totalMs": 420.56149300000016,
+      "filesPerSecond": 38.04437702050861,
+      "mebibytesPerSecond": 38.04437702050861,
+      "cpuMs": 487.039,
+      "eventLoopUtilization": 0.8461362290458143,
+      "eventLoopDelayP99Ms": 21.463039,
+      "eventLoopDelayMaxMs": 21.463039,
+      "baselineRssBytes": 135241728,
+      "peakRssBytes": 136290304,
+      "queueNotifications": 5,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 100112,
+        "serializationMs": 0.9223560000007183,
+        "commitMs": 6.1962809999990895
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 5,
+        "peakSessions": 5,
+        "peakTransfers": 4,
+        "operations": {
+          "stat": 272,
+          "upload": 16,
+          "rename": 16
+        },
+        "commands": {
+          "OPTS": 15,
+          "USER": 5,
+          "PASS": 5,
+          "FEAT": 10,
+          "TYPE": 5,
+          "STRU": 5,
+          "MLST": 501,
+          "EPSV": 144,
+          "MLSD": 128,
+          "STOR": 16,
+          "RNFR": 16,
+          "RNTO": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "upload",
+      "parallel": 8,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 52.816192999999885,
+      "transferMs": 362.1109879999999,
+      "totalMs": 414.9271809999998,
+      "filesPerSecond": 38.56098306560448,
+      "mebibytesPerSecond": 38.56098306560448,
+      "cpuMs": 487.559,
+      "eventLoopUtilization": 0.8697862514418102,
+      "eventLoopDelayP99Ms": 32.358399,
+      "eventLoopDelayMaxMs": 32.358399,
+      "baselineRssBytes": 142450688,
+      "peakRssBytes": 142843904,
+      "queueNotifications": 5,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 99958,
+        "serializationMs": 0.889077000003681,
+        "commitMs": 5.942533000000367
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 9,
+        "peakSessions": 9,
+        "peakTransfers": 8,
+        "operations": {
+          "stat": 272,
+          "upload": 16,
+          "rename": 16
+        },
+        "commands": {
+          "OPTS": 27,
+          "USER": 9,
+          "PASS": 9,
+          "FEAT": 18,
+          "TYPE": 9,
+          "STRU": 9,
+          "MLST": 505,
+          "EPSV": 144,
+          "MLSD": 128,
+          "STOR": 16,
+          "RNFR": 16,
+          "RNTO": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "download",
+      "parallel": 1,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 27.745210000000043,
+      "transferMs": 155.63136099999974,
+      "totalMs": 183.37657099999979,
+      "filesPerSecond": 87.25214956713319,
+      "mebibytesPerSecond": 87.25214956713319,
+      "cpuMs": 215.138,
+      "eventLoopUtilization": 0.8420156029621921,
+      "eventLoopDelayP99Ms": 21.331967,
+      "eventLoopDelayMaxMs": 21.331967,
+      "baselineRssBytes": 147038208,
+      "peakRssBytes": 147562496,
+      "queueNotifications": 3,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 85318,
+        "serializationMs": 0.8342900000020563,
+        "commitMs": 4.895804999996926
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 2,
+        "peakSessions": 2,
+        "peakTransfers": 1,
+        "operations": {
+          "stat": 96,
+          "download": 16
+        },
+        "commands": {
+          "OPTS": 6,
+          "USER": 2,
+          "PASS": 2,
+          "FEAT": 4,
+          "TYPE": 2,
+          "STRU": 2,
+          "MLST": 178,
+          "EPSV": 16,
+          "RETR": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "download",
+      "parallel": 2,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 24.63247599999977,
+      "transferMs": 165.98576500000036,
+      "totalMs": 190.61824100000013,
+      "filesPerSecond": 83.93740240211318,
+      "mebibytesPerSecond": 83.93740240211318,
+      "cpuMs": 231.914,
+      "eventLoopUtilization": 0.8048794361869362,
+      "eventLoopDelayP99Ms": 21.364735,
+      "eventLoopDelayMaxMs": 21.364735,
+      "baselineRssBytes": 147562496,
+      "peakRssBytes": 147562496,
+      "queueNotifications": 3,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 85324,
+        "serializationMs": 1.253008999998201,
+        "commitMs": 5.760822999999618
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 3,
+        "peakSessions": 3,
+        "peakTransfers": 2,
+        "operations": {
+          "stat": 96,
+          "download": 16
+        },
+        "commands": {
+          "OPTS": 9,
+          "USER": 3,
+          "PASS": 3,
+          "FEAT": 6,
+          "TYPE": 3,
+          "STRU": 3,
+          "MLST": 179,
+          "EPSV": 16,
+          "RETR": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "download",
+      "parallel": 4,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 19.821933000000172,
+      "transferMs": 163.1087889999999,
+      "totalMs": 182.93072200000006,
+      "filesPerSecond": 87.46480539228394,
+      "mebibytesPerSecond": 87.46480539228394,
+      "cpuMs": 212.535,
+      "eventLoopUtilization": 0.751076343626921,
+      "eventLoopDelayP99Ms": 20.447231,
+      "eventLoopDelayMaxMs": 20.447231,
+      "baselineRssBytes": 154247168,
+      "peakRssBytes": 154771456,
+      "queueNotifications": 3,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 85320,
+        "serializationMs": 0.8859049999987292,
+        "commitMs": 5.306656999996449
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 5,
+        "peakSessions": 5,
+        "peakTransfers": 4,
+        "operations": {
+          "stat": 96,
+          "download": 16
+        },
+        "commands": {
+          "OPTS": 15,
+          "USER": 5,
+          "PASS": 5,
+          "FEAT": 10,
+          "TYPE": 5,
+          "STRU": 5,
+          "MLST": 181,
+          "EPSV": 16,
+          "RETR": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "grote-bestanden",
+      "direction": "download",
+      "parallel": 8,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 16,
+      "fileBytes": 1048576,
+      "bytes": 16777216,
+      "enqueueMs": 25.74816200000032,
+      "transferMs": 161.5655499999998,
+      "totalMs": 187.31371200000012,
+      "filesPerSecond": 85.4181993894819,
+      "mebibytesPerSecond": 85.4181993894819,
+      "cpuMs": 213.831,
+      "eventLoopUtilization": 0.739585133101219,
+      "eventLoopDelayP99Ms": 20.479999,
+      "eventLoopDelayMaxMs": 20.479999,
+      "baselineRssBytes": 154771456,
+      "peakRssBytes": 154771456,
+      "queueNotifications": 3,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 81,
+        "serializedBytes": 85326,
+        "serializationMs": 0.8217449999988276,
+        "commitMs": 5.072679000001244
+      },
+      "navigation": {
+        "samples": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "maxMs": null,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 9,
+        "peakSessions": 9,
+        "peakTransfers": 7,
+        "operations": {
+          "stat": 96,
+          "download": 16
+        },
+        "commands": {
+          "OPTS": 27,
+          "USER": 9,
+          "PASS": 9,
+          "FEAT": 18,
+          "TYPE": 9,
+          "STRU": 9,
+          "MLST": 185,
+          "EPSV": 16,
+          "RETR": 16
+        }
+      },
+      "verifiedFiles": 16
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "upload",
+      "parallel": 1,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 1610.5814140000002,
+      "transferMs": 24652.885301000002,
+      "totalMs": 26263.466715000002,
+      "filesPerSecond": 38.075704584302436,
+      "mebibytesPerSecond": 0.1487332210324314,
+      "cpuMs": 28209.598,
+      "eventLoopUtilization": 0.946991768857902,
+      "eventLoopDelayP99Ms": 24.969215,
+      "eventLoopDelayMaxMs": 45.023231,
+      "baselineRssBytes": 146853888,
+      "peakRssBytes": 253550592,
+      "queueNotifications": 224,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 6167018,
+        "serializationMs": 75.15898099997685,
+        "commitMs": 465.1530540000167
+      },
+      "navigation": {
+        "samples": 52,
+        "p50Ms": 2.9373169999998936,
+        "p95Ms": 8.98432899999898,
+        "maxMs": 9.772142999998323,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 2,
+        "peakSessions": 2,
+        "peakTransfers": 1,
+        "operations": {
+          "stat": 17000,
+          "list": 52,
+          "upload": 1000,
+          "rename": 1000
+        },
+        "commands": {
+          "OPTS": 6,
+          "USER": 2,
+          "PASS": 2,
+          "FEAT": 4,
+          "TYPE": 2,
+          "STRU": 2,
+          "MLST": 31054,
+          "EPSV": 9052,
+          "MLSD": 8052,
+          "STOR": 1000,
+          "RNFR": 1000,
+          "RNTO": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "upload",
+      "parallel": 2,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 2226.0642399999997,
+      "transferMs": 35716.82340300001,
+      "totalMs": 37942.88764300001,
+      "filesPerSecond": 26.35540050111309,
+      "mebibytesPerSecond": 0.102950783207473,
+      "cpuMs": 41106.83,
+      "eventLoopUtilization": 0.9867653069644209,
+      "eventLoopDelayP99Ms": 27.017215,
+      "eventLoopDelayMaxMs": 33.816575,
+      "baselineRssBytes": 253550592,
+      "peakRssBytes": 255385600,
+      "queueNotifications": 320,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 6169188,
+        "serializationMs": 79.63420500031498,
+        "commitMs": 500.2820660001089
+      },
+      "navigation": {
+        "samples": 75,
+        "p50Ms": 7.139276000001701,
+        "p95Ms": 23.50097000000096,
+        "maxMs": 36.83940299999813,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 3,
+        "peakSessions": 3,
+        "peakTransfers": 2,
+        "operations": {
+          "stat": 17000,
+          "list": 75,
+          "upload": 1000,
+          "rename": 1000
+        },
+        "commands": {
+          "OPTS": 9,
+          "USER": 3,
+          "PASS": 3,
+          "FEAT": 6,
+          "TYPE": 3,
+          "STRU": 3,
+          "MLST": 31078,
+          "EPSV": 9075,
+          "MLSD": 8075,
+          "STOR": 1000,
+          "RNFR": 1000,
+          "RNTO": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "upload",
+      "parallel": 4,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 1727.7558759999956,
+      "transferMs": 26519.442758000005,
+      "totalMs": 28247.198634,
+      "filesPerSecond": 35.40174064540123,
+      "mebibytesPerSecond": 0.13828804939609857,
+      "cpuMs": 28130.378,
+      "eventLoopUtilization": 0.9804462639510024,
+      "eventLoopDelayP99Ms": 39.714815,
+      "eventLoopDelayMaxMs": 54.165503,
+      "baselineRssBytes": 258269184,
+      "peakRssBytes": 263905280,
+      "queueNotifications": 234,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 6166383,
+        "serializationMs": 69.31059700026526,
+        "commitMs": 520.6378859990073
+      },
+      "navigation": {
+        "samples": 56,
+        "p50Ms": 6.448795999996946,
+        "p95Ms": 18.094459999992978,
+        "maxMs": 53.46600800000306,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 5,
+        "peakSessions": 5,
+        "peakTransfers": 4,
+        "operations": {
+          "stat": 17000,
+          "list": 56,
+          "upload": 1000,
+          "rename": 1000
+        },
+        "commands": {
+          "OPTS": 15,
+          "USER": 5,
+          "PASS": 5,
+          "FEAT": 10,
+          "TYPE": 5,
+          "STRU": 5,
+          "MLST": 31061,
+          "EPSV": 9056,
+          "MLSD": 8056,
+          "STOR": 1000,
+          "RNFR": 1000,
+          "RNTO": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "upload",
+      "parallel": 8,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 2678.6554469999974,
+      "transferMs": 32329.136360999997,
+      "totalMs": 35007.791807999994,
+      "filesPerSecond": 28.565069327551235,
+      "mebibytesPerSecond": 0.11158230206074701,
+      "cpuMs": 38290.552,
+      "eventLoopUtilization": 0.9870927864893017,
+      "eventLoopDelayP99Ms": 30.474239,
+      "eventLoopDelayMaxMs": 87.162879,
+      "baselineRssBytes": 264167424,
+      "peakRssBytes": 267313152,
+      "queueNotifications": 288,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 6170750,
+        "serializationMs": 71.59971700047026,
+        "commitMs": 457.0699069997645
+      },
+      "navigation": {
+        "samples": 69,
+        "p50Ms": 12.704016999996384,
+        "p95Ms": 30.775651999996626,
+        "maxMs": 34.936996000004,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 9,
+        "peakSessions": 9,
+        "peakTransfers": 7,
+        "operations": {
+          "stat": 17000,
+          "list": 69,
+          "upload": 1000,
+          "rename": 1000
+        },
+        "commands": {
+          "OPTS": 27,
+          "USER": 9,
+          "PASS": 9,
+          "FEAT": 18,
+          "TYPE": 9,
+          "STRU": 9,
+          "MLST": 31078,
+          "EPSV": 9069,
+          "MLSD": 8069,
+          "STOR": 1000,
+          "RNFR": 1000,
+          "RNTO": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "download",
+      "parallel": 1,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 1263.2037450000062,
+      "transferMs": 4866.168299000012,
+      "totalMs": 6129.372044000018,
+      "filesPerSecond": 163.1488499672475,
+      "mebibytesPerSecond": 0.6373001951845605,
+      "cpuMs": 6418.756,
+      "eventLoopUtilization": 0.7824919034615885,
+      "eventLoopDelayP99Ms": 23.724031,
+      "eventLoopDelayMaxMs": 26.968063,
+      "baselineRssBytes": 267444224,
+      "peakRssBytes": 267444224,
+      "queueNotifications": 48,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 5245466,
+        "serializationMs": 45.23882000136655,
+        "commitMs": 261.4196400011424
+      },
+      "navigation": {
+        "samples": 12,
+        "p50Ms": 3.1542909999843687,
+        "p95Ms": 6.105649999983143,
+        "maxMs": 6.105649999983143,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 2,
+        "peakSessions": 2,
+        "peakTransfers": 1,
+        "operations": {
+          "stat": 6000,
+          "list": 12,
+          "download": 1000
+        },
+        "commands": {
+          "OPTS": 6,
+          "USER": 2,
+          "PASS": 2,
+          "FEAT": 4,
+          "TYPE": 2,
+          "STRU": 2,
+          "MLST": 11014,
+          "EPSV": 1012,
+          "MLSD": 12,
+          "RETR": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "download",
+      "parallel": 2,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 815.5667119999998,
+      "transferMs": 3993.8975639999844,
+      "totalMs": 4809.464275999984,
+      "filesPerSecond": 207.9233658081554,
+      "mebibytesPerSecond": 0.8122006476881071,
+      "cpuMs": 5215.514,
+      "eventLoopUtilization": 0.9412659538701248,
+      "eventLoopDelayP99Ms": 25.624575,
+      "eventLoopDelayMaxMs": 36.536319,
+      "baselineRssBytes": 267444224,
+      "peakRssBytes": 267444224,
+      "queueNotifications": 40,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 5245464,
+        "serializationMs": 47.23046200038516,
+        "commitMs": 279.3906970001699
+      },
+      "navigation": {
+        "samples": 9,
+        "p50Ms": 4.04816999999457,
+        "p95Ms": 5.958990000013728,
+        "maxMs": 5.958990000013728,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 3,
+        "peakSessions": 3,
+        "peakTransfers": 2,
+        "operations": {
+          "stat": 6000,
+          "list": 9,
+          "download": 1000
+        },
+        "commands": {
+          "OPTS": 9,
+          "USER": 3,
+          "PASS": 3,
+          "FEAT": 6,
+          "TYPE": 3,
+          "STRU": 3,
+          "MLST": 11012,
+          "EPSV": 1009,
+          "MLSD": 9,
+          "RETR": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "download",
+      "parallel": 4,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 905.1013320000202,
+      "transferMs": 3793.1852759999747,
+      "totalMs": 4698.286607999995,
+      "filesPerSecond": 212.8435498799185,
+      "mebibytesPerSecond": 0.8314201167184316,
+      "cpuMs": 5166.966,
+      "eventLoopUtilization": 0.9427981901853771,
+      "eventLoopDelayP99Ms": 23.658495,
+      "eventLoopDelayMaxMs": 25.444351,
+      "baselineRssBytes": 267444224,
+      "peakRssBytes": 280158208,
+      "queueNotifications": 38,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 5245454,
+        "serializationMs": 41.57542000117246,
+        "commitMs": 273.39370500060613
+      },
+      "navigation": {
+        "samples": 9,
+        "p50Ms": 3.7527339999796823,
+        "p95Ms": 12.098613000009209,
+        "maxMs": 12.098613000009209,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 5,
+        "peakSessions": 5,
+        "peakTransfers": 3,
+        "operations": {
+          "stat": 6000,
+          "list": 9,
+          "download": 1000
+        },
+        "commands": {
+          "OPTS": 15,
+          "USER": 5,
+          "PASS": 5,
+          "FEAT": 10,
+          "TYPE": 5,
+          "STRU": 5,
+          "MLST": 11014,
+          "EPSV": 1009,
+          "MLSD": 9,
+          "RETR": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    },
+    {
+      "scenario": "kleine-bestanden",
+      "direction": "download",
+      "parallel": 8,
+      "controlNoDelay": true,
+      "mlst": true,
+      "store": "sqlite",
+      "files": 1000,
+      "fileBytes": 4096,
+      "bytes": 4096000,
+      "enqueueMs": 915.3450590000139,
+      "transferMs": 3580.015939999983,
+      "totalMs": 4495.360998999997,
+      "filesPerSecond": 222.45154509781355,
+      "mebibytesPerSecond": 0.8689513480383342,
+      "cpuMs": 4903.31,
+      "eventLoopUtilization": 0.9315904038121338,
+      "eventLoopDelayP99Ms": 24.592383,
+      "eventLoopDelayMaxMs": 29.900799,
+      "baselineRssBytes": 280158208,
+      "peakRssBytes": 280420352,
+      "queueNotifications": 36,
+      "persistence": {
+        "backend": "sqlite",
+        "writes": 5001,
+        "serializedBytes": 5245578,
+        "serializationMs": 39.51800599848502,
+        "commitMs": 250.53535800077952
+      },
+      "navigation": {
+        "samples": 8,
+        "p50Ms": 5.808191000018269,
+        "p95Ms": 6.555155000009108,
+        "maxMs": 6.555155000009108,
+        "errors": []
+      },
+      "protocol": {
+        "sessionOpens": 9,
+        "peakSessions": 9,
+        "peakTransfers": 8,
+        "operations": {
+          "stat": 6000,
+          "list": 8,
+          "download": 1000
+        },
+        "commands": {
+          "OPTS": 27,
+          "USER": 9,
+          "PASS": 9,
+          "FEAT": 18,
+          "TYPE": 9,
+          "STRU": 9,
+          "MLST": 11017,
+          "EPSV": 1008,
+          "MLSD": 8,
+          "RETR": 1000
+        }
+      },
+      "verifiedFiles": 1000
+    }
+  ]
+}

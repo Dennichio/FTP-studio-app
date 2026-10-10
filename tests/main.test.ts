@@ -122,3 +122,51 @@ describe('desktop backend with isolated SQLite and filesystem', () => {
     await expect(f.service.invoke('enqueue', { requests: [{ projectId: f.project.id, connectionId: 'connection', direction: 'upload', localPath: path.join(f.localRoot, 'a'), remotePath: '/site/a' }] })).rejects.toThrow(/geannuleerd/); expect(enqueue).not.toHaveBeenCalled();
   });
 });
+
+
+describe('PHP related-file protection', () => {
+  it('keeps literal paths and suppresses sensitive, excluded and escaping include targets', async () => {
+    const f = await fixture(), filename = path.join(f.localRoot, 'index.php');
+    const content = '<?php require __DIR__ . "/part%23.inc"; include ".env"; include "../outside.php"; include "node_modules/dev.php"; ?> <link rel="stylesheet" href="style%20sheet.css?v=1">';
+    await fs.writeFile(filename, content);
+    await fs.writeFile(path.join(f.localRoot, 'part%23.inc'), '<?php /* included */');
+    await fs.writeFile(path.join(f.localRoot, '.env'), 'TEST_SECRET=fixture');
+    await fs.writeFile(path.join(f.root, 'outside.php'), '<?php /* outside */');
+    await fs.mkdir(path.join(f.localRoot, 'node_modules'));
+    await fs.writeFile(path.join(f.localRoot, 'node_modules', 'dev.php'), '<?php');
+    await fs.writeFile(path.join(f.localRoot, 'style sheet.css'), 'p{color:red}');
+    const files = await f.service.invoke('relatedFiles', { projectId: f.project.id, path: filename, content });
+    expect(files.sort()).toEqual([path.join(f.localRoot, 'part%23.inc'), path.join(f.localRoot, 'style sheet.css')].sort());
+    expect(await fs.readFile(filename, 'utf8')).toBe(content);
+  });
+});
+
+describe('project filter validation and open-file updates', () => {
+  const rule = { id: 'rule', action: 'exclude' as const, field: 'path' as const, operator: 'glob' as const, value: '**/*.tmp' };
+  it.each([null, { ...rule, value: 42 }, { ...rule, action: 'unknown' }, { ...rule, field: 'unknown' }, { ...rule, operator: 'unknown' }, { ...rule, id: '' }, { ...rule, value: '*'.repeat(257) }])('rejects malformed active and saved filter rules before persistence: %j', async malformed => {
+    const f = await fixture();
+    const filters = { display: [malformed], transfer: [], sync: [] } as unknown as Project['filters'];
+    for (const update of [{ filters }, { filterProfiles: [{ id: 'filter', name: 'Filter', filters }] }]) {
+      await expect(f.service.invoke('saveProject', { project: { ...f.project, ...update } })).rejects.toThrow();
+      expect((await f.service.invoke('bootstrap', undefined)).projects).toEqual([f.project]);
+    }
+  });
+  it('rejects duplicate names and bounded rule-count violations', async () => {
+    const f = await fixture();
+    await expect(f.service.invoke('saveProject', { project: { ...f.project, filterProfiles: [{ id: 'one', name: ' Web ', filters: f.project.filters }, { id: 'two', name: 'web', filters: f.project.filters }] } })).rejects.toThrow(/dubbel/);
+    await expect(f.service.invoke('saveProject', { project: { ...f.project, filters: { ...f.project.filters, sync: Array.from({ length: 501 }, (_, index) => ({ ...rule, id: String(index) })) } } })).rejects.toThrow(/500/);
+  });
+  it('updates only openFiles and preserves the latest project settings and independent filter scopes', async () => {
+    const f = await fixture(), filters = { display: [rule], transfer: [{ ...rule, id: 'transfer', value: '*.map' }], sync: [{ ...rule, id: 'sync', value: '*.log' }] };
+    const changed = { ...f.project, name: 'Updated', filters, filterProfiles: [{ id: 'preset', name: 'Web', filters }] };
+    const filename = path.join(f.localRoot, 'open.html');
+    const pending = f.service.invoke('setProjectOpenFiles', { projectId: f.project.id, paths: [filename, filename] });
+    // This durable update lands while open-file path validation awaits the filesystem.
+    f.store.set('projects', [changed]);
+    const updated = await pending;
+    expect(updated).toEqual({ ...changed, openFiles: [filename] });
+    expect((await f.service.invoke('bootstrap', undefined)).projects).toEqual([updated]);
+    await expect(f.service.invoke('setProjectOpenFiles', { projectId: f.project.id, paths: [path.join(f.root, 'outside.html')] })).rejects.toThrow(/buiten/);
+    expect((await f.service.invoke('bootstrap', undefined)).projects).toEqual([updated]);
+  });
+});

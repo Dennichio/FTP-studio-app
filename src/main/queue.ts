@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { ConnectionProfile, FileEntry, FileSnapshot, KeyValueStore, Logger, RemoteAccess, RemoteSession, TransferJob, TransferRequest } from '../shared/contracts';
+import type { ConnectionProfile, FileEntry, FileSnapshot, KeyValueStore, Logger, PersistedQueueRecord, RemoteAccess, RemoteSession, TransferJob, TransferRequest } from '../shared/contracts';
 import { endpointIdentity } from '../core/connectionIdentity';
 export { endpointIdentity } from '../core/connectionIdentity';
 
@@ -13,8 +13,7 @@ const MAX_ATTEMPTS = 4;
 const MAX_ACTIVE = 32;
 const MAX_EXPANSION = 100_000;
 const terminal = new Set(['completed', 'failed', 'cancelled', 'conflict']);
-type Transaction = { stage: string; backup?: string; phase: 'prepared' | 'backed-up' | 'installed' };
-type Record = { job: TransferJob; kind: 'file' | 'directory'; endpoint?: string; readyAt?: number; transaction?: Transaction };
+type Record = PersistedQueueRecord;
 type Running = { controller: AbortController; desired?: 'paused' | 'cancelled'; promise: Promise<void>; committing: boolean };
 
 class Conflict extends Error { override name = 'Conflict'; }
@@ -166,24 +165,31 @@ export class TransferQueue {
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
   private scheduled = false;
+  private committed = new Map<string, Record>();
+  private persistenceError?: Error;
+  private notificationTimer?: ReturnType<typeof setTimeout>;
+  private notificationPending = false;
 
   constructor(private remote: RemoteAccess, private store: KeyValueStore, private logger: Logger,
     private onChange: (jobs: TransferJob[]) => void, private onCompleted?: (job: TransferJob) => Promise<void> | void,
     private include?: (request: TransferRequest, entry: FileEntry) => boolean | Promise<boolean>,
     private options: { trustedCacheRoot?: string } = {}) {
-    const saved = store.get<Record[]>(STORE_KEY, []);
+    const saved = store.queue ? store.queue.load() : store.get<Record[]>(STORE_KEY, []);
+    const restored: Record[] = [];
     this.records = (Array.isArray(saved) ? saved : []).filter(record => record?.job?.id && ['file', 'directory'].includes(record.kind)).map(record => {
+      this.committed.set(record.job.id, structuredClone(record));
       const copy = structuredClone(record);
       if (!terminal.has(copy.job.status)) {
         copy.job.status = 'paused';
         copy.job.speed = 0;
         copy.job.remainingSeconds = null;
         copy.job.error = 'Hersteld na afsluiten. Hervatten vereist een expliciete opdracht; overdracht begint opnieuw.';
+        restored.push(copy);
       }
       return copy;
     });
     // Deliberately do not schedule restored records.
-    this.persist();
+    this.persist(restored);
   }
 
   jobs(): TransferJob[] { return this.records.map(record => structuredClone(record.job)); }
@@ -274,7 +280,7 @@ export class TransferQueue {
     }
     if (this.closed) throw new Error('De overdrachtswachtrij is gesloten.');
     this.records.push(...additions);
-    this.persist();
+    this.persist(additions);
     this.schedule();
     return additions.map(record => structuredClone(record.job));
   }
@@ -284,16 +290,20 @@ export class TransferQueue {
       status: 'queued', size: sourceSnapshot?.size ?? 0, transferred: 0, speed: 0, remainingSeconds: null, attempts: 0, createdAt: Date.now(), sourceSnapshot } };
   }
 
-  async action(action: 'pause' | 'resume' | 'cancel' | 'retry' | 'clear' | 'priority', ids?: string[], priority?: number): Promise<void> {
+  async action(action: 'pause' | 'resume' | 'cancel' | 'retry' | 'clear' | 'priority' | 'raisePriority' | 'lowerPriority', ids?: string[], priority?: number): Promise<void> {
+    if (this.persistenceError) throw this.persistenceError;
+    if (action === 'priority' && !Number.isFinite(priority)) throw new Error('Een geldige prioriteit is verplicht.');
     const selected = ids ? new Set(ids) : null;
     const pending: Promise<void>[] = [];
+    const changed: Record[] = [];
     for (const record of this.records) {
       const job = record.job;
       if (selected && !selected.has(job.id)) continue;
       const active = this.running.get(job.id);
-      if (action === 'priority') {
-        if (!Number.isFinite(priority)) throw new Error('Een geldige prioriteit is verplicht.');
-        job.priority = Math.max(0, Math.min(100, priority!));
+      if (action === 'priority' || action === 'raisePriority' || action === 'lowerPriority') {
+        const next = action === 'priority' ? priority! : (job.priority ?? 50) + (action === 'raisePriority' ? 1 : -1);
+        job.priority = Math.max(0, Math.min(100, next));
+        changed.push(record);
       } else if ((action === 'pause' || action === 'cancel') && !terminal.has(job.status)) {
         if (active) {
           active.desired = action === 'pause' ? 'paused' : 'cancelled';
@@ -301,14 +311,20 @@ export class TransferQueue {
           // Aborting the lease here would close its socket between moving the original and restoring it.
           if (!active.committing) active.controller.abort();
           pending.push(active.promise);
-        } else { job.status = action === 'pause' ? 'paused' : 'cancelled'; job.speed = 0; job.remainingSeconds = null; }
+        } else { job.status = action === 'pause' ? 'paused' : 'cancelled'; job.speed = 0; job.remainingSeconds = null; changed.push(record); }
       } else if (action === 'resume' && job.status === 'paused' && !active || action === 'retry' && ['failed', 'cancelled', 'conflict'].includes(job.status) && !active) {
         if (this.closed) throw new Error('De overdrachtswachtrij is gesloten.');
         job.status = 'queued'; job.attempts = 0; job.transferred = 0; job.error = undefined; record.readyAt = undefined;
+        changed.push(record);
       }
     }
-    if (action === 'clear') this.records = this.records.filter(record => !((!selected || selected.has(record.job.id)) && terminal.has(record.job.status) && !record.transaction && !this.running.has(record.job.id)));
-    this.persist();
+    const removed = action === 'clear' ? this.records.filter(record => (!selected || selected.has(record.job.id)) && terminal.has(record.job.status) && !record.transaction && !this.running.has(record.job.id)).map(record => record.job.id) : [];
+    if (removed.length) {
+      // Completion snapshots feed renderer upload baselines: deliver them before removal.
+      this.flushNotifications();
+      const removing = new Set(removed); this.records = this.records.filter(record => !removing.has(record.job.id));
+    }
+    this.persist(changed, removed);
     await Promise.all(pending);
     this.schedule();
   }
@@ -316,12 +332,50 @@ export class TransferQueue {
   async close(): Promise<void> {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
-    await this.action('pause');
+    try { await this.action('pause'); } catch (error) { this.log('error', `Wachtrij kon niet worden opgeslagen bij afsluiten: ${String(error)}`); }
     await Promise.all([...this.running.values()].map(active => active.promise));
+    this.flushNotifications();
   }
 
-  private persist(): void {
-    this.store.set(STORE_KEY, structuredClone(this.records));
+  private persist(changed: Record[], removed: string[] = []): void {
+    if (this.persistenceError) throw this.persistenceError;
+    try {
+      if (this.store.queue) this.store.queue.commit(changed, removed);
+      else this.store.set(STORE_KEY, structuredClone(this.records));
+      for (const record of changed) this.committed.set(record.job.id, structuredClone(record));
+      for (const id of removed) this.committed.delete(id);
+    } catch (cause) {
+      this.persistenceError = new Error(`Duurzame wachtrijopslag is mislukt; verdere overdrachten zijn geblokkeerd: ${String(cause)}`);
+      this.closed = true;
+      if (this.timer) clearTimeout(this.timer);
+      if (this.notificationTimer) clearTimeout(this.notificationTimer);
+      this.notificationTimer = undefined; this.notificationPending = false;
+      // Restore the last durable states in place, retaining references held by running work.
+      const existing = new Map(this.records.map(record => [record.job.id, record]));
+      this.records = [...this.committed.values()].map(saved => {
+        const record = existing.get(saved.job.id);
+        if (!record) return structuredClone(saved);
+        const job = record.job, copy = structuredClone(saved);
+        for (const key of Object.keys(job)) delete (job as unknown as { [key: string]: unknown })[key];
+        Object.assign(job, copy.job); Object.assign(record, copy, { job });
+        if (!copy.transaction) delete record.transaction;
+        if (copy.readyAt === undefined) delete record.readyAt;
+        return record;
+      });
+      for (const active of this.running.values()) if (!active.committing) { active.desired = 'paused'; active.controller.abort(); }
+      throw this.persistenceError;
+    }
+    this.notify();
+  }
+  private notify(): void {
+    this.notificationPending = true;
+    if (!this.closed && !this.notificationTimer) this.notificationTimer = setTimeout(() => this.flushNotifications(), 100);
+  }
+  private flushNotifications(): void {
+    if (this.notificationTimer) clearTimeout(this.notificationTimer);
+    this.notificationTimer = undefined;
+    if (!this.notificationPending || this.persistenceError) return;
+    this.notificationPending = false;
     try { this.onChange(this.jobs()); } catch (error) { this.log('warning', `Wachtrijmelding mislukt: ${String(error)}`); }
   }
   private log(level: Parameters<Logger>[0], message: string, connectionId?: string): void {
@@ -330,7 +384,7 @@ export class TransferQueue {
   private schedule(): void {
     if (this.closed || this.scheduled) return;
     this.scheduled = true;
-    queueMicrotask(() => { this.scheduled = false; this.pump(); });
+    queueMicrotask(() => { this.scheduled = false; try { this.pump(); } catch (error) { this.log('error', `Wachtrij gestopt: ${String(error)}`); } });
   }
   private pump(): void {
     if (this.closed) return;
@@ -341,11 +395,12 @@ export class TransferQueue {
       .sort((a, b) => (b.job.priority ?? 50) - (a.job.priority ?? 50) || a.job.createdAt - b.job.createdAt);
     let next = Infinity;
     for (const record of waiting) {
+      if (this.closed) break;
       if ((record.readyAt ?? 0) > Date.now()) { next = Math.min(next, record.readyAt!); continue; }
       if (this.running.size >= MAX_ACTIVE) break;
       let profile;
       try { profile = this.remote.profile(record.job.connectionId); } catch {
-        record.job.status = 'failed'; record.job.error = 'De verbinding is niet beschikbaar. Maak verbinding en kies opnieuw proberen.'; this.persist(); continue;
+        record.job.status = 'failed'; record.job.error = 'De verbinding is niet beschikbaar. Maak verbinding en kies opnieuw proberen.'; this.persist([record]); continue;
       }
       const limit = Math.max(1, Math.min(MAX_ACTIVE, Math.floor(profile.parallelTransfers || 4), Math.floor(profile.connectionLimit || 4)));
       if ((counts.get(record.job.connectionId) ?? 0) >= limit) continue;
@@ -369,7 +424,7 @@ export class TransferQueue {
     const profile = this.remote.profile(job.connectionId);
     let localRoot = profile.localRoot;
     job.status = 'running'; job.attempts++; job.transferred = 0; job.speed = 0; job.error = undefined;
-    this.persist();
+    this.persist([record]);
     let lease;
     try {
       abort(signal);
@@ -396,7 +451,7 @@ export class TransferQueue {
       } else if (job.direction === 'upload') await this.upload(record, active, lease.session, localRoot, profile.remoteRoot);
       else await this.download(record, active, lease.session, localRoot, profile.remoteRoot);
       job.status = 'completed'; job.transferred = job.size; job.speed = 0; job.remainingSeconds = 0; job.error = undefined; record.readyAt = undefined;
-      this.persist();
+      this.persist([record]);
       this.log('info', `Overdracht voltooid: ${path.basename(job.localPath)}`, job.connectionId);
       // A manifest hook may need another lease even when the profile allows only one session.
       if (lease) {
@@ -414,7 +469,7 @@ export class TransferQueue {
       else if (!(error instanceof UnsafePath) && profile.autoReconnect && job.attempts < MAX_ATTEMPTS) {
         job.status = 'queued'; record.readyAt = Date.now() + Math.min(30_000, 500 * 2 ** (job.attempts - 1)); job.error = 'Verbinding of overdracht mislukt. Een beperkte herhaalpoging is ingepland.';
       } else { job.status = 'failed'; job.error = error instanceof Error ? error.message : 'Overdracht mislukt.'; }
-      this.persist();
+      this.persist([record]);
       this.log(job.status === 'conflict' ? 'warning' : 'error', job.error ?? 'Overdracht onderbroken.', job.connectionId);
     } finally {
       if (lease) try { await lease.release(); } catch { this.log('warning', 'Overdrachtssessie kon niet netjes worden afgesloten.', job.connectionId); }
@@ -423,13 +478,12 @@ export class TransferQueue {
 
   private progress(job: TransferJob): (value: { transferred: number; total: number }) => void {
     const start = Date.now();
-    let last = 0;
     return value => {
       const now = Date.now();
       job.transferred = Math.max(job.transferred, Math.min(job.size, Number.isFinite(value.transferred) ? value.transferred : 0));
       job.speed = job.transferred / Math.max(0.05, (now - start) / 1000);
       job.remainingSeconds = job.speed > 0 ? Math.max(0, (job.size - job.transferred) / job.speed) : null;
-      if (now - last >= 150) { last = now; try { this.onChange(this.jobs()); } catch { /* Observers do not own the transfer. */ } }
+      this.notify();
     };
   }
 
@@ -472,11 +526,11 @@ export class TransferQueue {
       abort(signal);
       active.committing = true;
       record.transaction = { stage, ...(existing ? { backup } : {}), phase: 'prepared' };
-      this.persist();
+      this.persist([record]);
       try {
         if (existing) {
           await session.rename(job.remotePath, backup);
-          record.transaction.phase = 'backed-up'; this.persist();
+          record.transaction.phase = 'backed-up'; this.persist([record]);
           const originalBackup = await remoteSafe(session, remoteRoot, backup);
           guard(job.expectedRemote, snapshot(originalBackup), 'Externe reservekopie');
           if (preservedMode && !sameMode(preservedMode, originalBackup?.permissions)) throw new Conflict('De serverrechten van de originele reservekopie zijn gewijzigd.');
@@ -484,14 +538,14 @@ export class TransferQueue {
         }
         // Generic FTP/SFTP has no conditional rename: re-stat narrows, but cannot eliminate, a concurrent server writer race.
         await session.rename(stage, job.remotePath);
-        record.transaction.phase = 'installed'; this.persist();
+        record.transaction.phase = 'installed'; this.persist([record]);
         const installed = await remoteSafe(session, remoteRoot, job.remotePath);
         if (!installed || installed.kind !== 'file' || !same(snapshot(uploaded), snapshot(installed))) throw new Conflict('Het geïnstalleerde externe bestand kon niet worden bevestigd.');
         if (preservedMode && !sameMode(preservedMode, installed.permissions)) throw new Conflict('De rechten van het geïnstalleerde serverbestand wijken af. De originele reservekopie blijft behouden.');
         if (installed.checksum && installed.checksum !== copySnapshot.checksum) throw new Conflict('Controlesom van het geïnstalleerde externe bestand klopt niet.');
         job.verifiedRemote = snapshot(installed)!;
         job.verifiedLocal = structuredClone(job.sourceSnapshot!);
-        record.transaction = undefined; this.persist();
+        record.transaction = undefined; this.persist([record]);
         if (existing) try { await session.remove(backup, false); } catch { this.log('warning', `Overdracht voltooid; reservekopie bewaard: ${backup}`, job.connectionId); }
       } catch (error) {
         if (existing && record.transaction?.phase === 'backed-up') {
@@ -501,7 +555,7 @@ export class TransferQueue {
             if (same(job.expectedRemote, snapshot(old)) && !await remoteSafe(session, remoteRoot, job.remotePath)) {
               await session.rename(backup, job.remotePath);
               guard(job.expectedRemote, snapshot(await remoteSafe(session, remoteRoot, job.remotePath)), 'Hersteld extern doel');
-              record.transaction = undefined; this.persist();
+              record.transaction = undefined; this.persist([record]);
             }
           } catch { /* Persisted recovery paths remain available for manual recovery. */ }
         }
@@ -555,11 +609,11 @@ export class TransferQueue {
       try { await fs.lstat(backup); throw new Conflict('Lokale reservekopie bestaat al.'); } catch (error) { if (!missing(error)) throw error; }
       abort(signal);
       active.committing = true;
-      record.transaction = { stage, ...(job.expectedLocal ? { backup } : {}), phase: 'prepared' }; this.persist();
+      record.transaction = { stage, ...(job.expectedLocal ? { backup } : {}), phase: 'prepared' }; this.persist([record]);
       try {
         if (job.expectedLocal) {
           await fs.rename(job.localPath, backup);
-          record.transaction.phase = 'backed-up'; this.persist();
+          record.transaction.phase = 'backed-up'; this.persist([record]);
           guard(job.expectedLocal, await localSnapshot(localRoot, backup), 'Lokale reservekopie');
           if (preservedMode !== undefined && ((await fs.lstat(backup)).mode & 0o777) !== preservedMode) throw new Conflict('De lokale rechten zijn tijdens de bestandswissel gewijzigd.');
           if (await localSnapshot(localRoot, job.localPath)) throw new Conflict('Het lokale doel is tijdens de bestandswissel opnieuw aangemaakt.');
@@ -572,13 +626,13 @@ export class TransferQueue {
           if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Conflict('Het lokale doel is tijdens de bestandswissel opnieuw aangemaakt.');
           throw error;
         }
-        record.transaction.phase = 'installed'; this.persist();
+        record.transaction.phase = 'installed'; this.persist([record]);
         const installed = await localSnapshot(localRoot, job.localPath);
         if (!installed || installed.size !== downloaded.size || installed.checksum !== downloaded.checksum) throw new Conflict('Het geïnstalleerde lokale bestand kon niet worden bevestigd.');
         if (preservedMode !== undefined && ((await fs.lstat(job.localPath)).mode & 0o777) !== preservedMode) throw new Conflict('De rechten van het geïnstalleerde lokale bestand wijken af. De originele reservekopie blijft behouden.');
         job.verifiedRemote = verifiedRemote!;
         job.verifiedLocal = installed;
-        record.transaction = undefined; this.persist();
+        record.transaction = undefined; this.persist([record]);
         if (job.expectedLocal) await fs.unlink(backup).catch(() => this.log('warning', `Lokale reservekopie bewaard: ${backup}`, job.connectionId));
       } catch (error) {
         if (job.expectedLocal && record.transaction?.phase === 'backed-up') {
@@ -587,7 +641,7 @@ export class TransferQueue {
               await fs.link(backup, job.localPath);
               guard(job.expectedLocal, await localSnapshot(localRoot, job.localPath), 'Hersteld lokaal doel');
               await fs.unlink(backup);
-              record.transaction = undefined; this.persist();
+              record.transaction = undefined; this.persist([record]);
             }
           } catch { /* Leave all recoverable originals in place on ambiguity. */ }
         }

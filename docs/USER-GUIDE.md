@@ -28,9 +28,17 @@ Filters hebben aparte scopes voor weergave, overdracht en synchronisatie. Gebrui
 
 De linker- en rechterpanelen tonen lokale en externe bestanden. Dubbelklik een bestand om het in de editor te openen. Verborgen bestanden zijn via Instellingen zichtbaar te maken. Gekoppelde navigatie volgt relatieve paden binnen de projectroots.
 
+Sleep de kolomranden in een bestandspaneel om breedtes aan te passen. De breedtes worden per paneel onthouden; gebruik **Kolombreedtes herstellen** voor de standaardindeling. Ook de breedteverdeling tussen code en canvas wordt onthouden.
+
+Via het contextmenu kunt u gewone serverbestanden kopiëren of bestanden en mappen verplaatsen. **Nieuw bestand** maakt een leeg serverbestand via de wachtrij. Aanmaken en kopiëren overschrijven geen bestaande bestemming; mappen kopiëren binnen de server is nog niet beschikbaar.
+
 De editor bewaart herstelgegevens voor niet-opgeslagen wijzigingen. Gebruik Ctrl+S om lokaal op te slaan. Schakel automatisch uploaden alleen in wanneer u bewust elk lokaal opslaan naar de actieve serververbinding wilt laten doorzetten. Een mislukte upload laat de lokale save bestaan en meldt de fout.
 
+Gebruik **Vergelijken met opgeslagen versie** om uw editorinhoud naast de actuele schijf- of serverversie te bekijken. Beide kanten zijn alleen-lezen en tekst kan worden gekopieerd. De vergelijking neemt de serverversie niet over als nieuwe uploadbasis en lost een conflict niet automatisch op. Niet-opgeslagen werk en herstelgegevens blijven behouden.
+
 Visueel bewerken kan alleen als HTML/CSS parseerbaar en statisch genoeg is. De visuele inspector past bronpatches toe en kan tekst, attributen, beperkte elementen en CSS-declaraties wijzigen. Scripts, stylesheets als documentblokken, templates, dynamische attributen en parserambiguïteit zijn beschermd. Als de inspector blokkeert, bewerk de bron in Monaco.
+
+Selecteer een element op het canvas of in de DOM-boom en open de CSS-tab om passende regels uit interne en externe stylesheets te vinden. **Naar CSS-bron** opent de betreffende regel. Controleer de gedeelde impact voordat u een eigenschap toepast; externe CSS blijft een afzonderlijk gewijzigd document dat u apart kunt opslaan of uploaden. Overerving en de winnende cascade worden nog niet berekend. De DOM-boom ondersteunt inklappen, toetsenbordselectie en veilig verplaatsen via slepen.
 
 Zoek/vervang in het project biedt vooraf een lijst met wijzigingen. Controleer het voorbeeld; toepassen controleert of de bron sinds het voorbeeld niet is gewijzigd en bewaart backups. Werk alleen binnen projecten waarvan u eigenaar bent.
 

@@ -53,11 +53,11 @@ export const CodeEditor = forwardRef<CodeEditorHandle, EditorProps>((p, ref) => 
   useImperativeHandle(ref, () => ({
     insert(text) { const ed = editor.current, range = ed?.getSelection(); if (ed && range) { ed.executeEdits('snippet', [{ range, text, forceMoveMarkers: true }]); ed.focus(); } },
     revealLine(line) { const ed = editor.current; if (ed) { ed.setPosition({ lineNumber: line, column: 1 }); ed.revealLineInCenter(line); ed.focus(); } },
-    reveal(start, end) { const m = model.current, ed = editor.current; if (m && ed) { const bom = value(m).startsWith('\uFEFF') ? 1 : 0; const a = m.getPositionAt(Math.max(0,start-bom)), b = m.getPositionAt(Math.max(0,(end??start)-bom)); ed.setSelection(new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column)); ed.revealLineInCenter(a.lineNumber); } }
+    reveal(start, end) { const m = model.current, ed = editor.current; if (m && ed) { const bom = value(m).startsWith('\uFEFF') ? 1 : 0; const a = m.getPositionAt(Math.max(0,start-bom)), b = m.getPositionAt(Math.max(0,(end??start)-bom)); ed.setSelection(new monaco.Selection(b.lineNumber, b.column, a.lineNumber, a.column)); ed.revealLineInCenter(a.lineNumber); } }
   }), []);
   useEffect(() => {
     if (!container.current) return;
-    const ed = monaco.editor.create(container.current, { theme, automaticLayout: true, minimap: { enabled: false },
+    const ed = monaco.editor.create(container.current, { theme, ariaLabel: 'Broncode', automaticLayout: true, minimap: { enabled: false },
       fontFamily: '"Cascadia Code", "SFMono-Regular", Consolas, monospace', fontSize: callbacks.current.settings.editorFontSize,
       lineNumbers: 'on', scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 }, renderLineHighlight: 'line',
       tabSize: 2, wordWrap: callbacks.current.settings.wordWrap ? 'on' : 'off', fixedOverflowWidgets: true });

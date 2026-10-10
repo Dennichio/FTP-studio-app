@@ -13,7 +13,7 @@ test.beforeEach(async () => {
   const site = path.join(root, 'site'); await fs.mkdir(site);
   await fs.writeFile(path.join(site, 'index.html'), '<!doctype html><html><head><title>Werkelijke desktoptest</title></head><body><h1>Mijn website</h1><p>Origineel</p></body></html>');
   await fs.writeFile(path.join(site, 'style.css'), 'h1 { color: red !important; }');
-  application = await electron.launch({ executablePath: createRequire(import.meta.url)('electron') as string, args: [path.resolve('.')], env: { ...process.env, FTP_STUDIO_DATA_DIR: path.join(root, 'data') } });
+  application = await electron.launch({ executablePath: createRequire(path.resolve('package.json'))('electron') as string, args: [path.resolve('.')], env: { ...process.env, FTP_STUDIO_DATA_DIR: path.join(root, 'data') } });
   page = await application.firstWindow(); await page.waitForSelector('.studio');
   await page.evaluate(async localRoot => {
     await window.ftp.invoke('saveProject', { project: { id: 'test-project', name: 'Desktoptest', localRoot, remoteRoot: '/site', filters: { display: [], transfer: [], sync: [] }, environments: [], bookmarks: [] } });
@@ -48,7 +48,8 @@ test('isolated child frame has no desktop bridge, Node, or parent bridge access'
     const frame = document.createElement('iframe'); frame.name = 'isolation-probe'; frame.sandbox.add('allow-scripts'); frame.srcdoc = '<p>Geïsoleerd</p>';
     const loaded = new Promise<void>(resolve => { frame.onload = () => resolve(); }); document.body.append(frame); await loaded;
   });
-  const frame = page.frame({ name: 'isolation-probe' }); expect(frame).not.toBeNull();
+  const frameElement = await page.locator('iframe[name="isolation-probe"]').elementHandle();
+  const frame = await frameElement!.contentFrame(); expect(frame).not.toBeNull();
   const capabilities = await frame!.evaluate(() => {
     let parentBridge = false; try { parentBridge = !!(parent as unknown as { ftp?: unknown }).ftp; } catch { /* Opaque origin. */ }
     return { bridge: typeof window.ftp, node: typeof (window as unknown as { require?: unknown }).require, parentBridge };

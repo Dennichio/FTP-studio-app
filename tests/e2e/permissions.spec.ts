@@ -1,0 +1,55 @@
+import { test, expect } from '@playwright/test';
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { ftpFixture } from '../fixtures/ftp-server';
+let application:ElectronApplication,page:Page,root:string,site:string,server:Awaited<ReturnType<typeof ftpFixture>>;
+test.beforeEach(async()=>{
+ root=await fs.mkdtemp(path.join(os.tmpdir(),'ftp-permissions-ui-'));site=path.join(root,'site');await fs.mkdir(site);await fs.mkdir(path.join(site,'sub'));
+ server=await ftpFixture();server.directories.add('/site');server.directories.add('/site/sub');server.files.set('/site/sub/child.txt',Buffer.from('kind'));server.directories.add('/site/remote-only');
+ application=await electron.launch({executablePath:createRequire(path.resolve('package.json'))('electron') as string,args:[path.resolve('.')],env:{...process.env,FTP_STUDIO_DATA_DIR:path.join(root,'data')}});
+ page=await application.firstWindow();await page.waitForSelector('.studio');
+ await page.evaluate(async ({site,port})=>{
+  const profile={id:'permission-server',name:'Rechtenserver',host:'127.0.0.1',port,protocol:'ftp' as const,username:'test',localRoot:site,remoteRoot:'/site',timeoutMs:5000,connectionLimit:5,parallelTransfers:4,autoReconnect:false,passive:true};
+  await window.ftp.invoke('saveProject',{project:{id:'permissions-project',name:'Rechtenproject',profileId:profile.id,localRoot:site,remoteRoot:'/site',filters:{display:[],transfer:[],sync:[]},environments:[],bookmarks:[]}});
+  const state=await window.ftp.invoke('bootstrap',undefined);await window.ftp.invoke('saveSettings',{settings:{...state.settings,lastProjectId:'permissions-project'}});
+  await window.ftp.invoke('connect',{profile,credentials:{password:'test'}});
+ },{site,port:server.port});
+ await page.reload();await page.waitForSelector('.file-pane[aria-label="Serverbestanden"] .file-row[role="option"]');
+});
+test.afterEach(async()=>{await application?.close();await server?.close();if(root)await fs.rm(root,{recursive:true,force:true});});
+test('recursive chmod requires explicit consent and sends linked checkbox mode to actual FTP server',async()=>{
+ const pane=page.locator('.file-pane[aria-label="Serverbestanden"]');
+ await pane.locator('.file-row[role="option"]').filter({hasText:'sub'}).click({button:'right'});
+ await page.getByRole('button',{name:'Machtigingen…',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Servermachtigingen'});
+ await dialog.getByRole('button',{name:'755 · map / uitvoerbaar',exact:true}).click();
+ await dialog.getByRole('group',{name:'Overigen',exact:true}).getByLabel('Schrijven',{exact:true}).check();
+ await expect(dialog.getByLabel('Octale rechten')).toHaveValue('757');
+ await expect(dialog).toContainText('Iedereen krijgt schrijfrecht');
+ await dialog.getByRole('group',{name:'Overigen',exact:true}).getByLabel('Schrijven',{exact:true}).uncheck();
+ await dialog.getByLabel('Ook toepassen op alle bestanden en submappen in de geselecteerde mappen',{exact:true}).check();
+ await expect(dialog.getByRole('button',{name:'Machtigingen toepassen'})).toBeDisabled();
+ expect(server.chmodCalls).toEqual([]);
+ await dialog.getByLabel(/Ik bevestig/).check();
+ await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:1,checkboxChecked:false});});
+ await dialog.getByRole('button',{name:'Machtigingen toepassen'}).click();
+ await expect(dialog).toHaveCount(0);
+ expect(server.chmodCalls).toEqual([{path:'/site/sub/child.txt',mode:'755'},{path:'/site/sub',mode:'755'}]);
+});
+test('linked navigation works both ways and never creates missing counterpart directories',async()=>{
+ const local=page.locator('.file-pane[aria-label="Lokale bestanden"]'),remote=page.locator('.file-pane[aria-label="Serverbestanden"]');
+ await local.locator('.file-row[role="option"]').filter({hasText:'sub'}).dblclick();
+ await expect(remote.getByLabel('Serverpad')).toHaveValue('/site/sub');
+ await expect(remote.locator('.file-row[role="option"]')).toContainText('child.txt');
+ await remote.getByRole('button',{name:'Projecthoofdmap',exact:true}).click();
+ await expect(local.getByLabel('Lokaal pad')).toHaveValue(site);
+ await remote.locator('.file-row[role="option"]').filter({hasText:'remote-only'}).dblclick();
+ await expect(local.getByLabel('Lokaal pad')).toHaveValue(path.join(site,'remote-only'));
+ await expect.poll(()=>fs.access(path.join(site,'remote-only')).then(()=>true,()=>false)).toBe(false);
+ await local.getByLabel('Lokaal pad').fill(root);await local.getByLabel('Lokaal pad').press('Enter');
+ await expect(page.getByRole('button',{name:'Gekoppelde mapnavigatie',exact:true})).not.toHaveClass(/(?:^|\s)on(?:\s|$)/);
+ expect(server.directories.has('/remote-only')).toBe(false);
+});

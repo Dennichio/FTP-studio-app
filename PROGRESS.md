@@ -1,14 +1,12 @@
 # Voortgang
 
-## Huidige stand
+## Huidige stand — 10 oktober 2026
 
-**Laatste update 10 oktober 2026:** expliciete netwerkgoedkeuring is in deze bestaande omgeving geslaagd (registry HTTP 200). Alle npm-dependencies en de officiële Electron-runtime zijn nu geïnstalleerd; package-lock.json is aangemaakt. Typecheck en applicatiebuild slagen na gerichte compatibiliteitsreparaties. Eerdere netwerkblokkades hieronder zijn historie. Na herstel van drie gevonden testfixtureproblemen slaagt de volledige Vitest-reeks: 173/173. Windows-validatie en productfunctionaliteit blijven open.
+De huidige build is op Linux gecompileerd en gecontroleerd: **408/408 Vitest-tests in 19 suites (63,29 s)**. De uitgebreide Electron/Xvfb-ronde haalde **38/40**; na herstel van de labels in het vergelijkingsvenster slaagden **alle vijf betreffende scenario’s (20,1 s)**. De overige 35 scenario’s waren geslaagd. Dit is geen nieuwe volledige 40/40-run. Typecheck en applicatiebuild zijn groen. De actuele Windows x64 ZIP is samengesteld en op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd. De volledige masterprompt is nog niet afgerond.
 
-De repository bevat een Electron/TypeScript/React-app met Monaco, remote profielen en protocols, twee bestandspanelen, projectbeheer, editor, bronbewuste beperkte HTML/CSS-inspector, lokale preview, persistentie, queue en publicatieplan. De broncode en tests zijn aanwezig.
+Netwerktoegang voor npm en Electron is opgelost via expliciete uitvoeringsgoedkeuring. Geen cloudmigratie nodig. De laatste ontwikkelronde omvat MLST-metadata, incrementele SQLite-queue, veilig remote aanmaken/kopiëren/verplaatsen, DOM-boom, externe CSS-patches, alleen-lezen bestandsdiff, instelbare kolommen en code/canvasverdeling. Nieuwere hersteltekst blijft bij opslaan behouden. De onafhankelijke A-reviews zijn akkoord; gerichte en volledige tests staan in TESTRESULTS.md.
 
-**Historische blokkade vóór de expliciete goedkeuring (inmiddels deels opgelost):** dependency-installatie, `npm run typecheck`, `npm test`, Windows x64-build, starten op Windows, protocoltests tegen echte serverconfiguraties, onderbreking/crashherstel op Windows, safeStorage/DPAPI-gedrag op doelversies, installer/artifact en releasekwaliteit. Shell-netwerktoegang blokkeerde de volledige dependency-installatie. Deze toenmalige beperking is voor Linux-build en protocoltests opgelost; Windowsresultaten blijven onbewezen.
-
-De hoofdagent heeft de meegeleverde offline-controles uitgevoerd: aanvankelijk 31/31 en na de queue-uitbreidingen 39/39 wachtrijtestgevallen via Node assert, plus 5/5 kerncontroles via node:test, 7/7 metadata-searchchecks en 10/10 managerchecks met geïnjecteerde sessies. Dit zijn geen Vitest-run of Windows-validatie. Exacte dekking en beperkingen staan in [TESTRESULTS.md](TESTRESULTS.md).
+Op verzoek om binnen het resterende gebruiksbudget een Windows-app te bezorgen, krijgt het actuele downloadpakket voorrang op nieuwe uitbreidingen. Dit is een bruikbare ontwikkelbuild; resterende masterpromptfuncties worden niet als voltooid gemarkeerd.
 
 ## Werkverdeling zoals opgegeven
 
@@ -19,23 +17,19 @@ De hoofdagent heeft de meegeleverde offline-controles uitgevoerd: aanvankelijk 3
 
 De verdeling geeft taaktoewijzing weer en is geen onafhankelijke kwaliteitscertificering. De C-documentatie is daarna door de A-reviewer bijgewerkt aan de hand van concrete brondekking. Hoofdagent moet wijzigingen/reviews en resultaten bij release aanvullen.
 
-## Volgende releaseblokkades
+## Resterend werk na dit opleverpunt
 
-1. Voltooid: npm-dependencies, lockfile en Electron-runtime geïnstalleerd via expliciete netwerkgoedkeuring. Gebruik `npm ci` voor volgende installaties.
-2. Voltooid: typecheck, build en 173 Vitest-tests. Desktopbediening en crashherstel moeten nog in Electron worden uitgevoerd.
-3. Op Windows x64 bouwen (`npm run dist:win`), artifact starten en releasechecklist doorlopen.
-4. Reële provider-/servervarianten valideren, inclusief SSH fingerprint, TLS, conflict, stagingrollback en crash/herstart.
-5. Resultaten, bekende beperkingen en artifactlocatie in dit bestand en `TESTRESULTS.md` documenteren.
+1. Windows 11 x64-uitvoering, DPI, native dialoogvensters, DPAPI en NTFS-herstel controleren; dit vereist een Windows-testomgeving.
+2. De oorspronkelijke P0/P1-matrix afronden, waaronder volledige CSS-cascade/overerving, uitgebreidere canvaslayout, interne JavaScript-preview en aanvullende taalformatters.
+3. Representatieve hostingservers, ondersteunde hervatstrategieën en uiteindelijke distributieafwerking valideren. De huidige ZIP is niet ondertekend.
 
-Naast deze uitvoeringsblokkades is er functioneel open werk. De oorspronkelijke P0/P1-opdracht is niet compleet door alleen dependencies te installeren of tests te laten slagen. De volledige dekkingsmatrix staat in [SPECIFICATION.md](SPECIFICATION.md): onder meer remote copy/move/create-file, directe quickconnect, profielgroepen/testactie, benoemde filterprofielen, remote conflictdiff, geavanceerde CSS-cascade/herkomst/selectorimpact, canvaslayoutbewerking, interne JS-preview, browserkeuze, statische PHP-includes, snippetgroepen/zoeken, chmod-checkboxes/recursieve bediening en logniveaufilter ontbreken geheel of gedeeltelijk.
-
-## Scope- en statusregel
-
-Dit project bevat een geïntegreerde broncodebasis, maar de beloofde complete Dreamweaver+FileZilla-ervaring is nog niet gerealiseerd of als desktopapp geverifieerd. Zie [SPECIFICATION.md](SPECIFICATION.md) voor grenzen en [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) voor status per eis.
+De dagelijkse workflow is verder ontwikkeld dan de volledige visuele websitebouwer. De aan de gebruiker gegeven voortgangsschatting (circa 85% voor dagelijkse workflow, circa 70% voor de gehele opdracht) is een ruwe inschatting, geen gemeten acceptatiepercentage. Zie [SPECIFICATION.md](SPECIFICATION.md).
 
 ## Uitgevoerde onafhankelijke reviews
 
-GPT-6 Astra controleerde de B-modelcode voor UI, protocollen en werkruimtediensten; een afzonderlijke Astra-agent controleerde ook opslag, preview, desktopbrug en documentatie van GPT-6 Luna. Gevonden fouten rond uploadbestemming, verouderde synchronisatiemanifesten, onveilige bestandswissels, geheime foutteksten, groeiende downloadstreams en speciale bestanden zijn hersteld of in regressietests opgenomen. Nieuwe desktopcode en protocoltests blijven afhankelijk van de ontbrekende volledige build/testcontrole. Twee subagents stopten later wegens een gemelde modelgebruikslimiet; de hoofdagent nam hun resterende integratie over.
+De volgende review- en checkpointsecties zijn historisch. Hun toenmalige testblokkades worden vervangen door de huidige stand bovenaan en de actuele desktopstatus onderaan.
+
+GPT-6 Astra controleerde de B-modelcode voor UI, protocollen en werkruimtediensten; een afzonderlijke Astra-agent controleerde ook opslag, preview, desktopbrug en documentatie van GPT-6 Luna. Gevonden fouten rond uploadbestemming, verouderde synchronisatiemanifesten, onveilige bestandswissels, geheime foutteksten, groeiende downloadstreams en speciale bestanden zijn hersteld of in regressietests opgenomen. Nieuwe desktopcode en protocoltests zijn sindsdien gebouwd en deels uitgevoerd; zie de actuele resultaten hieronder en TESTRESULTS.md. Twee subagents stopten later wegens een gemelde modelgebruikslimiet; de hoofdagent nam hun resterende integratie over.
 
 ### Aanvullende integratiereview op 9 oktober 2026
 
@@ -53,14 +47,23 @@ De voorafgaande netwerktoegangsaanvraag voor `npm install --ignore-scripts` leve
 
 Die review vond een late POSIX-rechtenrace. De hoofdagent houdt nu de staginghandle vast tot na de laatste controle. Een gedetecteerde rechtenwijziging van het oorspronkelijke inode leidt tot een fout en beperking van uitsluitend het eigen staginginode; een inmiddels vervangen doelpad wordt niet aangeraakt. Twee regressies reproduceren zowel deze race als een ander proces dat het doelpad vervangt. De reviewer heeft de reparatie goedgekeurd en de vijf rechtencontroles en vijf kerncontroles opnieuw uitgevoerd. Een wijziging ná de laatste controle blijft een niet-atomaire grens; Windows-ACL/ownership/attributen zijn niet geverifieerd.
 
-De hoofdagent heeft opnieuw 5 kern-, 39 wachtrij-, 7 metadatazoek-, 10 sessiemanager- en uiteindelijk 5 POSIX-rechtencontroles uitgevoerd: alle geslaagd. De broncode is een ontwikkelcheckpoint; volledige compilatie, desktopvalidatie en verdere P0/P1-afwerking blijven open. Er wordt geen uitvoerbaar Windows-product opgeleverd of als gereed aangemerkt.
+De hoofdagent heeft opnieuw 5 kern-, 39 wachtrij-, 7 metadatazoek-, 10 sessiemanager- en uiteindelijk 5 POSIX-rechtencontroles uitgevoerd: alle geslaagd. De broncode is een ontwikkelcheckpoint; volledige P0/P1-afwerking blijft open. Er wordt geen uitvoerbaar Windows-product opgeleverd of als gereed aangemerkt.
 
-## Geslaagde netwerkroute en volledige bouw-/unitcontrole
+## Historische bouw-/unitcontrole vóór de laatste codewijzigingen
 
 De root-agent gebruikte de beschikbare `exec_command` met expliciete `require_escalated`-goedkeuring voor één begrensde HTTPS-proef. De registry gaf HTTP 200. Vervolgens zijn alle 367 opgeloste pakketten geïnstalleerd met `--ignore-scripts`; de lockfile ligt vast. De officiële Electron 41.10.7-runtime is apart via de ingestelde proxy en ingebouwde checksumcontrole opgehaald. Een nieuwe cloudomgeving is voor deze downloads niet nodig.
 
 De eerste echte compilatie vond ontbrekende `.js`-suffixen in Monaco-imports, een discriminant/typeprobleem in de source-engine en verouderde SFTP-typebeschrijvingen. De eerste bronparsertests vonden daarnaast CSS-offsetfouten en onvoldoende weigering van onbetrouwbare HTML-bronranges. Die fouten zijn gericht gerepareerd. Het B-model `protocol_build_fixes` verzorgde de protocolcompatibiliteit en testfixtures; A-model `source_build_fixes` herstelde de parser en reviewde de protocolwijzigingen onafhankelijk. De hoofdagent controleerde de brondelta en integreerde de renderer- en fixturecorrecties.
 
-Laatste feitelijke resultaten: `npm run typecheck` exit 0, `npm run build` exit 0, `timeout 180s npm test` met goedgekeurde lokale sockets exit 0 en **173/173 tests in acht suites**. De suite gebruikt ook echte FTP-/SFTP-sockets en FTPS-certificaatweigering. Correcties in fixtures betroffen een geldig versleuteld PKCS1-sleutelformaat, correcte Unix-longnames en expliciete POSIX-testrechten; productiebeveiligingscontroles zijn niet versoepeld.
+Resultaten op dat historische controlemoment: `npm run typecheck` exit 0, `npm run build` exit 0, `timeout 180s npm test` met goedgekeurde lokale sockets exit 0 en **173/173 tests in acht suites**. De suite gebruikt ook echte FTP-/SFTP-sockets en FTPS-certificaatweigering. Correcties in fixtures betroffen een geldig versleuteld PKCS1-sleutelformaat, correcte Unix-longnames en expliciete POSIX-testrechten; productiebeveiligingscontroles zijn niet versoepeld.
 
 De applicatie is hiermee nog niet releaseklaar. De Electron-GUI/e2e, Windows-build en Windows-runtimevalidatie zijn niet uitgevoerd en de overige functionele gaten in de P0/P1-matrix blijven open. De broncode, lockfile en geschiedenis zijn opnieuw verpakt voor overdracht; geïnstalleerde node_modules en platformbinaries worden niet als broncodeback-up meegenomen.
+
+
+### Eerdere desktop- en packagingstatus — 10 oktober 2026
+
+Electron-GUI-scenario’s onder Linux/Xvfb slaagden afzonderlijk voor SQLite-metadata/herstel/isolation, Monaco BOM/CRLF/undo/tabmodellen, Save As, CSS visual-match/manual shared impact/guarded edit met exacte bronbehoud, snippetgroepen en logfilters. De vorige GUI-run eindigde op 14/20. Een tussentijdse run eindigde op 28/31: twee testproblemen zijn gecorrigeerd (CSS filesystem-polling had een intentional save-gap ENOENT; DOM matcher gebruikte `toHaveText`, dat `<title>` overslaat). De derde bevinding was een echte priority-bug: snel `lower` en `higher` klikwerk kon op stale absolute value 50 rekenen en uitkomen op 51. Backend delta-acties zijn toegevoegd; de daaropvolgende rerun slaagde 31/31 en A-review keurde de priority-/assertionfixes goed. Dit eerdere 28/31-resultaat is historie. Een eerdere cross-compiled Linux-build leverde `release/FTP-Studio-1.0.0-win-x64.zip` op (156 MiB; 6.134 entries, geen Node native addons, vijf Monaco-workers). Die artifact is stale; nieuwe packaging volgt na verificatie van de aanvullende wijzigingen. Windows runtime, DPAPI en signing zijn onbewezen. De twee benchmarkmatrices zijn inmiddels afgerond en staan in docs/BENCHMARKS.md.
+
+## Oplevercheckpoint — 10 oktober 2026, 13:22 UTC
+
+De actuele Windows-ZIP is gedeeld voor de door de gebruiker gevraagde visuele check. Inhoud en integriteit zijn gecontroleerd; geen Windows-uitvoering geclaimd. Broncode, Git-bundle en overdrachtsarchief worden voor dit checkpoint vernieuwd. De gebruiker kan zelfstandig de interface beoordelen terwijl de resterende P0/P1-eisen en Windows-validatie open blijven.

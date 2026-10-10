@@ -1,14 +1,14 @@
 # Releasechecklist
 
-Deze checklist is een openstaande releasepoort. De huidige repositorystatus is **niet vrijgegeven**: dependencies konden niet volledig worden geïnstalleerd door ontbrekende shell-netwerktoegang; typecheck, Vitest en Windows artifact/start zijn niet vastgesteld.
+Deze checklist onderscheidt de huidige ontwikkelbuild van een definitieve Windows-release. Typecheck/build en 408/408 Vitest-tests slagen. Desktop: 38/40, daarna 5/5 gerichte diffhercontrole. De actuele Windows x64 ZIP is een zelfstandige cross-build; Windows-start/DPAPI/DPI en volledige masterpromptacceptatie blijven open. Benchmarks zijn uitgevoerd; zie BENCHMARKS.md.
 
 ## Build en bewijs
 
-- [ ] Voer `npm install` uit zolang de eerste lockfile ontbreekt; controleer en bewaar die lockfile. Gebruik daarna `npm ci`.
-- [ ] Voer `npm run typecheck` uit; noteer Node/npm-versie en resultaat.
-- [ ] Voer `npm test` uit; noteer aantal suites/tests en resultaat. Voeg geen fictieve uitkomsten toe.
-- [ ] Bouw op Windows x64 met `npm run dist:win`.
-- [ ] Noteer artifactnaam, hash, buildomgeving en Electron/Node-versie. Controleer ZIP-inhoud en start de app vanaf een schone installatie/profiel.
+- [x] Dependencies en lockfile zijn aanwezig; voer voor herhaalbare installatie `npm ci` uit.
+- [x] Voer `npm run typecheck` uit; noteer Node/npm-versie en resultaat.
+- [x] Voer `npm test` uit; noteer aantal suites/tests en resultaat. Voeg geen fictieve uitkomsten toe.
+- [x] Windows x64 ZIP met `npm run build` en `electron-builder --win zip --x64` gemaakt; Linux-crossbuild is geen Windows-runtimevalidatie.
+- [ ] Noteer artifactnaam, hash, buildomgeving en Electron/Node-versie. Controleer ZIP-inhoud en start de app vanaf een schone installatie/profiel. Actuele inhoudinspectie en hashes staan in WINDOWS-BUILD-CHECK.json; starten op Windows blijft open.
 - [ ] Bevestig of code signing/installer nodig is. Huidige config maakt een ZIP en schakelt executable signing/editing uit.
 - [ ] Voer de relevante gebruikersscenario's hieronder op de uiteindelijke Windows-build uit en leg afwijkingen vast.
 
@@ -23,7 +23,7 @@ Deze checklist is een openstaande releasepoort. De huidige repositorystatus is *
 
 ## Bestand- en overdrachtsscenario's
 
-- [ ] Open, bewerk en sla UTF-8 LF- en CRLF-bestanden op; controleer encoding/eol en herstel na herstart.
+- [ ] Open, bewerk en sla UTF-8 LF- en CRLF-bestanden op; behoud is onder Linux/Xvfb afzonderlijk gecontroleerd. Controleer ook encoding/EOL-herstel na Windows-herstart.
 - [ ] Test padgrenzen, symlinks, Windows-gereserveerde namen, rootoverschrijding en remote `..`-paden.
 - [ ] Test filters en gevoelige bestandsuitsluitingen voor gewone queue en publicatie.
 - [ ] Test upload/download, mapuitbreiding, pauze/hervat (opnieuw vanaf nul), retry, cancel, prioriteit en queueherstel.
@@ -43,6 +43,6 @@ Deze checklist is een openstaande releasepoort. De huidige repositorystatus is *
 ## Afronding
 
 - [ ] Werk `PROGRESS.md` en `TESTRESULTS.md` bij met echte uitkomsten, beperkingen en bekende problemen.
-- [ ] Controleer dat `LICENSE`-bestand overeenkomt met de gedeclareerde MIT-licentie.
+- [x] Eigen LICENSE is MIT; dependencylicenties blijven afzonderlijk van kracht.
 - [ ] Review release notes en documentatie tegen de daadwerkelijk gebouwde versie.
 - [ ] Markeer release als gereed pas nadat alle vereiste blokkers zijn afgehandeld of expliciet geaccepteerd.

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { FileEntry, FileSnapshot, KeyValueStore, ManifestEntry, Project, PublishItem, PublishPlan, RemoteAccess, TransferJob, TransferRequest } from '../shared/contracts';
-import { discoverDependencies } from './source';
+import { collectDependencyReferences } from './phpDependencies';
 import { endpointIdentity } from './connectionIdentity';
 import { assertSafeLocalPath, compareEntries, isDefaultExcluded, isSensitivePath, listLocal, localSnapshot, mapLocalToRemote, mapRemoteToLocal, matchesFilters, normalizeRemoteRoot, readTextFile } from './workspace';
 
@@ -64,6 +64,12 @@ export class PublishPlanner {
 
     let selected: Set<string> | undefined;
     const dependencies = new Set<string>();
+    const warnings = new Set<string>();
+    const warn = (relative: string, message: string) => {
+      if (warnings.size >= 200) { warnings.add('Meer meldingen over afhankelijkheden zijn afgekapt; controleer de projectbestanden handmatig.'); return; }
+      const label = relative.replace(/[\u0000-\u001f\u007f]/g, '?').slice(0, 180);
+      warnings.add(`${label}: ${message}`);
+    };
     if (options.paths?.length) {
       selected = new Set(options.paths.map(value => {
         const absolute = path.isAbsolute(value) ? value : path.resolve(localRoot, value);
@@ -74,27 +80,43 @@ export class PublishPlanner {
       for (const relative of new Set([...local.keys(), ...remote.keys()])) {
         if ([...selected].some(parent => parent === '' || relative.startsWith(`${parent}/`))) selected.add(relative);
       }
-      if (options.includeDependencies) {
-        const queue = [...selected];
-        for (let index = 0; index < queue.length; index++) {
-          if (queue.length > 20000) throw new Error('Te veel gerelateerde bestanden.');
-          const relative = queue[index];
-          const entry = local.get(relative);
-          if (!entry || entry.kind !== 'file' || excluded(relative, entry) || !/\.(?:html?|php|css|[cm]?jsx?|tsx?)$/i.test(relative) || entry.size > 2 * 1024 * 1024) continue;
-          const content = (await readTextFile(entry.path)).content;
-          for (const reference of discoverDependencies(content, path.extname(relative).slice(1))) {
-            if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(reference)) continue;
-            const plain = reference.split(/[?#]/)[0];
+    }
+    if (options.includeDependencies) {
+      const queue = [...(selected ?? local.keys())];
+      const queued = new Set(queue);
+      for (let index = 0; index < queue.length; index++) {
+        if (queue.length > 20000) throw new Error('Te veel gerelateerde bestanden.');
+        const relative = queue[index];
+        const entry = local.get(relative);
+        if (!entry || entry.kind !== 'file' || excluded(relative, entry) || !/\.(?:html?|php\d*|phtml|inc|css|[cm]?jsx?|tsx?)$/i.test(relative)) continue;
+        if (entry.size > 2 * 1024 * 1024) { warn(relative, 'Bestand te groot voor automatische afhankelijkheidscontrole.'); continue; }
+        const content = (await readTextFile(entry.path)).content;
+        const found = collectDependencyReferences(content, path.extname(relative).slice(1));
+        for (const warning of found.warnings) warn(relative, warning);
+        const references = [...found.fileReferences.map(value => ({ value, file: true })), ...found.urlReferences.map(value => ({ value, file: false }))];
+        for (const reference of references) {
+          let decoded = reference.value;
+          if (!reference.file) {
+            if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(decoded)) continue;
+            const plain = decoded.split(/[?#]/)[0];
             if (!plain) continue;
-            let decoded: string;
-            try { decoded = decodeURIComponent(plain); } catch { continue; }
-            if (decoded.includes('\\') || decoded.includes('\0')) continue;
-            const absolute = decoded.startsWith('/') ? path.resolve(localRoot, `.${decoded}`) : path.resolve(path.dirname(entry.path), decoded);
-            let dep: string;
-            try { dep = path.posix.relative(remoteRoot, mapLocalToRemote(absolute, localRoot, remoteRoot)); } catch { continue; }
-            if (!local.has(dep) || selected.has(dep)) continue;
-            dependencies.add(dep); selected.add(dep); queue.push(dep);
+            try { decoded = decodeURIComponent(plain); }
+            catch { warn(relative, 'Een statische URL-afhankelijkheid heeft ongeldige tekencodering.'); continue; }
           }
+          if (/[\\\u0000-\u001f\u007f]/.test(decoded)) { warn(relative, 'Een afhankelijkheid heeft een onveilig pad.'); continue; }
+          const absolute = !reference.file && decoded.startsWith('/') ? path.resolve(localRoot, `.${decoded}`) : path.resolve(path.dirname(entry.path), decoded);
+          let dep: string;
+          try { dep = path.posix.relative(remoteRoot, mapLocalToRemote(absolute, localRoot, remoteRoot)); }
+          catch { warn(relative, 'Een afhankelijkheid valt buiten de projectmap en is overgeslagen.'); continue; }
+          const dependency = local.get(dep), remoteDependency = remote.get(dep);
+          if (isDefaultExcluded(dep) || isSensitivePath(dep) || [dependency, remoteDependency].some(item => item && (item.kind === 'symlink' || excluded(dep, item)))) {
+            warn(relative, 'Een afhankelijkheid is uitgesloten door veiligheidsregels of projectfilters.'); continue;
+          }
+          if (!dependency || dependency.kind !== 'file') {
+            warn(relative, 'Een statische afhankelijkheid ontbreekt lokaal of is geen gewoon bestand.'); continue;
+          }
+          if (queued.has(dep)) continue;
+          dependencies.add(dep); selected?.add(dep); queued.add(dep); queue.push(dep);
         }
       }
     }
@@ -127,7 +149,7 @@ export class PublishPlanner {
       item.selected = (item.action === 'upload' || item.action === 'download') && (!selected || selected.has(relative));
       items.push(item);
     }
-    const plan: PublishPlan = { id: randomUUID(), projectId: project.id, connectionId, ...(environment ? { environmentId: environment.id } : {}), production: environment?.production ?? false, items, createdAt: Date.now() };
+    const plan: PublishPlan = { id: randomUUID(), projectId: project.id, connectionId, ...(environment ? { environmentId: environment.id } : {}), production: environment?.production ?? false, items, ...(warnings.size ? { warnings: [...warnings] } : {}), createdAt: Date.now() };
     if (endpointIdentity(this.remote.profile(connectionId)) !== endpoint) throw new Error('De verbindingsbestemming wijzigde tijdens het maken van het publicatieplan. Maak een nieuw plan.');
     this.plans.set(plan.id, { plan, project: structuredClone(project), remoteRoot, manifestKey, endpoint });
     if (this.plans.size > 100) this.plans.delete(this.plans.keys().next().value!);

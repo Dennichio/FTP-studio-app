@@ -24,7 +24,7 @@ test.beforeEach(async () => {
   for (let start = 0; start < 1400; start += 40) {
     await Promise.all(Array.from({ length: Math.min(40, 1400 - start) }, (_, offset) => fs.writeFile(path.join(site, `item-${String(start + offset).padStart(4, '0')}.txt`), '')));
   }
-  application = await electron.launch({ executablePath: createRequire(import.meta.url)('electron') as string, args: [path.resolve('.')], env: { ...process.env, FTP_STUDIO_DATA_DIR: path.join(root, 'data') } });
+  application = await electron.launch({ executablePath: createRequire(path.resolve('package.json'))('electron') as string, args: [path.resolve('.')], env: { ...process.env, FTP_STUDIO_DATA_DIR: path.join(root, 'data') } });
   page = await application.firstWindow();
   await page.waitForSelector('.studio');
   await page.evaluate(async localRoot => {
@@ -66,15 +66,15 @@ test('large real folders keep bounded DOM rows, exact metadata and full selectio
 
 test('real Monaco tabs retain undo, BOM and CRLF when source is edited and saved', async () => {
   await openFile('index.html');
-  const editor = page.locator('.monaco-editor textarea.inputarea');
-  await editor.focus(); await page.keyboard.press('Control+End'); await page.keyboard.insertText('<!-- Bewaarde wijziging -->');
+  const editor = page.getByRole('textbox', { name: 'Broncode', exact: true });
+  await editor.focus(); await page.keyboard.press('Control+End'); await page.keyboard.insertText('Bewaard');
   await expect(page.locator('.editor-tab.active .tab-close')).toHaveClass(/dirty/);
   await openFile('other.html');
   await page.locator('.editor-tab').filter({ hasText: 'index.html' }).click();
   await editor.focus(); await page.keyboard.press('Control+Z');
   await expect(page.locator('.editor-tab.active .tab-close')).not.toHaveClass(/dirty/);
   await page.keyboard.press('Control+Shift+Z'); await page.keyboard.press('Control+S');
-  await expect.poll(async () => fs.readFile(path.join(site, 'index.html'), 'utf8')).toContain('<!-- Bewaarde wijziging -->');
+  await expect.poll(async () => fs.readFile(path.join(site, 'index.html'), 'utf8')).toContain('Bewaard');
   const saved = await fs.readFile(path.join(site, 'index.html'), 'utf8');
   expect(saved.startsWith('\uFEFF')).toBe(true);
   expect(saved.replace(/\r\n/g, '')).not.toContain('\n');
@@ -113,6 +113,8 @@ test('panel hide and maximize choices persist through actual desktop reload', as
  });
 
  test('real connection tabs preserve separate local and remote paths without stale selections',async()=>{
+  // This test deliberately uses unrelated path pairs; linked navigation is verified separately.
+  await page.getByRole('button', { name: 'Gekoppelde mapnavigatie', exact: true }).click();
   const serverA=await ftpFixture(),serverB=await ftpFixture();
   serverA.directories.add('/site');serverA.directories.add('/site/a');serverA.files.set('/site/a/only-a.txt',Buffer.from('A'));
   serverB.directories.add('/site');serverB.directories.add('/site/b');serverB.files.set('/site/b/only-b.txt',Buffer.from('B'));

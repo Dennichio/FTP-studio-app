@@ -15,7 +15,7 @@
 | Conflictbeleid | Vergelijk snapshots; onvergelijkbaar of gewijzigd doel resulteert in conflict | Grootte alleen geldt niet als voldoende bewijs van ongewijzigde remote inhoud. Operator beoordeelt beide versies en plant opnieuw. |
 | Bulkfilters | Gevoelige namen en gangbare build/vendor-mappen standaard uitsluiten | Vermindert kans op publiceren van geheimen of ruis. Filters vervangen geen beoordeling; expliciete gevoelige bestandsoverdracht is apart gemarkeerd. |
 | Publiceren | Eerst plan tonen, selectie door gebruiker, productiebevestiging | Maakt wijzigingen zichtbaar voordat de queue ze uitvoert. Conflicten en uitgesloten bestanden blijven buiten de overdracht. Geen continue sync of remote delete. |
-| Windows-artifact | Electron Builder x64 ZIP target | Geen installer/signing claim. Nog niet gebouwd, geïnstalleerd of op Windows getest. |
+| Windows-artifact | Electron Builder x64 ZIP target | Geen installer/signing claim. Eerdere cross-compiled ZIP is verouderd; definitieve build moet opnieuw worden verpakt en is geen Windows-runtimevalidatie. |
 
 ## Aanvullende integriteitskeuzes en open acceptatiepunten
 
@@ -28,12 +28,20 @@
 | Automatisch opnieuw proberen | Maximaal vier pogingen totaal, dus drie retries, met exponentiële vertraging | De eerste poging telt mee. Handmatige retry start opnieuw. Dit begrenst automatische herhaling, niet het totale aantal handmatig gestarte pogingen. |
 | Ingebouwde preview | Projectscripts uit; alleen vertrouwde selectie-instrumentatie in opaque sandboxiframe | Isoleert onbetrouwbare preview van de desktopbridge. Daarmee is de geëiste interne JS-livepreview nog niet gerealiseerd; externe preview is een aparte functie. |
 | Zoekregex | Begrensde subset om onbegrensde verwerking te voorkomen | Geen ondersteuning voor alle JavaScript-regexconstructies. UI en documentatie moeten deze beperking tonen. |
-| Meetbaarheid | Apart loopbackharnas voor 1/2/4/8 transfers en veel kleine bestanden | Harnas is geen meetresultaat; RAM-server en JSON-geheugenstore meten geen volledige productieketen. |
+| Meetbaarheid | Loopbackharnas voor 1/2/4/8 transfers en kleine/grote bestanden; twee matrices van 16 scenario’s zijn uitgevoerd | Elke matrix controleerde 8.128 bestanden op SHA-256. Resultaten betreffen de gezamenlijke MLST/SQLite/UI-coalescing wijziging op Linux; details en beperkingen staan in `docs/BENCHMARKS.md`. |
 
 Deze technische keuzes documenteren de huidige implementatie. Zij geven geen toestemming om ontbrekende expliciete P0/P1-eisen als afgerond te markeren. [SPECIFICATION.md](SPECIFICATION.md) houdt het resterende functionele werk bij; [TESTRESULTS.md](TESTRESULTS.md) scheidt uitgevoerde controles van voorbereide tests.
 
-## Eerste echte dependency- en integratiecontrole
+## Historische dependency- en integratiecontrole
 
 - Behoud de bestaande Base Environment: een expliciet goedgekeurde `require_escalated`-uitvoering bereikte npm via de beheerde proxy en downloadde ook Electron. De standaard-sandbox blijft beperkt; eerdere aanvragen met uitsluitend extra netwerkrechten bleven zonder bruikbaar resultaat.
 - Leg de opgeloste versies vast in package-lock.json. Een smalle lokale SFTP-v12-declaratie beschrijft de werkelijk gebruikte runtime-API omdat de beschikbare v9-types lstat en stream-offsetopties missen. Ze gebruikt getypeerde ssh2-streamopties en is onafhankelijk gereviewd; protocolcontroles zijn niet omzeild.
 - Gebruik de door PostCSS geleverde exclusieve eindoffset rechtstreeks. De echte regressietests toonden dat een extra +1 omliggende bronbytes kon beschadigen. Weiger bovendien visuele patches wanneer parserherstel bronranges verplaatst of expliciete sluit-tags ontbreken.
+
+## 10 oktober 2026 — afhankelijkheden en vergelijkingsfunctie
+
+Na de npm-audit is basic-ftp bijgewerkt naar 6.2.3. Afwijkende PASV-datahosts worden standaard geweigerd; de adapter blijft die veilige instelling gebruiken. Protocoltests gebruiken echte loopbackservers.
+
+DOMPurify 3.4.16 is expliciet vastgelegd. Monaco 0.55.1 bevat daarnaast een eigen oudere kopie: een nauw begrensde esbuild-resolutie vervangt daarom de import vanuit Monaco's domSanitize.js door het bijgewerkte pakket. Metafilecontroles weigeren de oude bron in de renderer en iedere sanitizer in editorworkers. Een audit zonder meldingen alleen bewijst deze bundeleigenschap niet.
+
+De bestandsvergelijking toont twee alleen-lezen momentopnamen. Zij verandert geen hersteltekst, werkcache of uploadbasis. Serverinhoud wordt apart, begrensd en endpointgebonden gelezen. Broncodewijzigingen blijven een bewuste actie in de gewone editor. Nieuwere hersteltekst tijdens opslaan wordt na de schijfcommit behouden en op de nieuwe metadata gebaseerd.

@@ -310,6 +310,33 @@ describe('TransferQueue', () => {
     await f.queue.close(); expect(f.remote.releases).toBe(f.remote.sessions);
   });
 
+  it('applies consecutive priority deltas to durable current values without intervening UI snapshots and clamps boundaries', async () => {
+    const f = await fixture(); f.remote.hold = new Promise<void>(() => {});
+    await f.queue.enqueue([await f.upload('selected.txt'), await f.upload('unchanged.txt')]);
+    await f.queue.close();
+    const notifications: TransferJob[][] = [];
+    const restored = new TransferQueue(f.remote, f.store, () => {}, jobs => notifications.push(jobs));
+    fixtures.push({ root: f.root, queue: restored });
+    const displayed = restored.jobs(), selected = displayed[0].id;
+    const assertPriority = (expected: number) => {
+      expect(restored.jobs()[0].priority).toBe(expected);
+      expect(f.store.get<Array<{ job: TransferJob }>>('transferQueue.v1', [])[0].job.priority).toBe(expected);
+      expect(restored.jobs()[1].priority).toBe(50);
+      expect(displayed[0].priority).toBe(50);
+      expect(notifications).toEqual([]);
+    };
+    expect(displayed.every(job => job.status === 'paused')).toBe(true);
+    await restored.action('lowerPriority', [selected]); assertPriority(49);
+    await restored.action('raisePriority', [selected]); assertPriority(50);
+    await restored.action('raisePriority', [selected]); assertPriority(51);
+    await restored.action('priority', [selected], 0);
+    await restored.action('lowerPriority', [selected]); assertPriority(0);
+    await restored.action('raisePriority', [selected]); assertPriority(1);
+    await restored.action('priority', [selected], 100);
+    await restored.action('raisePriority', [selected]); assertPriority(100);
+    await restored.action('lowerPriority', [selected]); assertPriority(99);
+  });
+
   it('uses four transfers when the profile leaves parallelism unspecified', async () => {
     const f = await fixture({ parallelTransfers: 0, connectionLimit: 10 });
     const gate = deferred(); f.remote.hold = gate.promise;

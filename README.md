@@ -6,14 +6,16 @@ De applicatie biedt een beperkte bronbewuste HTML/CSS-inspector. Ze is geen voll
 
 ## Status
 
-De expliciete netwerkgoedkeuring werkt in de bestaande omgeving. Dependencies en Electron zijn geïnstalleerd; de eerste volledige typecheck en applicatiebuild zijn geslaagd. De volledige Vitest-reeks slaagt: 173/173, inclusief lokale protocolfixtures. Er is nog geen gevalideerd Windows x64-artifact of Windows-runtimecontrole. Bekijk [voortgang](PROGRESS.md), [specificatie](SPECIFICATION.md) en [releasechecklist](docs/RELEASE-CHECKLIST.md) voordat u productiegebruik overweegt.
+De huidige build is op Linux gecompileerd en gecontroleerd: **408/408 Vitest-tests in 19 suites (63,29 s)**. De uitgebreide Electron/Xvfb-ronde haalde **38/40**; na herstel van de labels in het vergelijkingsvenster slaagden **alle vijf betreffende scenario’s (20,1 s)**. De overige 35 scenario’s waren geslaagd. Dit is geen nieuwe volledige 40/40-run. Typecheck en applicatiebuild zijn groen. De actuele Windows x64 ZIP is samengesteld en op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd. De volledige masterprompt is nog niet afgerond.
+
+De distributie staat onder `release/FTP-Studio-1.0.0-win-x64.zip`. Pak de hele ZIP uit en start `FTP Studio.exe`; zie [Windows-installatie](docs/INSTALLATIE-WINDOWS.md). Broncode en overdrachtsarchief staan onder `artifacts/`. Beide loopback-benchmarkmatrices zijn afgerond: elk 16 scenario’s en 8.128 gecontroleerde bestanden. Zie [benchmarkrapport](docs/BENCHMARKS.md), [testresultaten](TESTRESULTS.md) en [resterende eisen](SPECIFICATION.md).
 
 ## Ontwikkelen
 
 Vereist: Node.js-versie passend bij Electron 41 en npm, plus netwerktoegang tot de geregistreerde dependencies.
 
 ```sh
-npm install
+npm ci
 npm run build
 npm run dev
 ```
@@ -26,13 +28,13 @@ npm test
 npm run dist:win
 ```
 
-`dist:win` is geconfigureerd voor een x64 ZIP-artifact via Electron Builder. Het script en de targetconfiguratie garanderen geen werkende Windows-build; voer de releasechecklist uit op Windows. `npm run dist:linux` is eveneens geconfigureerd, zonder platformvalidatieclaim.
+`dist:win` maakt een zelfstandige Windows x64 ZIP met Electron en lokale editorassets. De executable is niet digitaal ondertekend. `npm run dist:linux` is eveneens beschikbaar; een cross-build bewijst geen Windows-runtimegedrag.
 
 ## Eerste gebruik
 
 1. Maak een verbinding met host, poort, gebruikersnaam, lokale root en remote root.
 2. Kies FTP, FTPS of SFTP. Bij SFTP haalt u de SHA-256-hostvingerafdruk op via een vertrouwde providerbron en controleert u die vóór opslaan en verbinden.
-3. Sla een wachtwoord of sleutelwachtzin alleen op als Electron safeStorage op het systeem beschikbaar is. Credentials worden niet als leesbare SQLite-waarden bewaard.
+3. Sla een wachtwoord of sleutelwachtzin alleen op als Electron safeStorage op het systeem beschikbaar is. Credentials worden versleuteld en gekoppeld aan de verbindingsidentiteit; legacycredentials moeten opnieuw worden ingevoerd en opgeslagen.
 4. Maak een project met de lokale hoofdmap en serverhoofdmap. Koppel desgewenst een profiel, stel omgevingen/filters in en geef alleen voor een lokaal draaiende previewserver een `localhost`-URL op.
 5. Open dubbelklikbestanden in de editor. Opslaan werkt lokaal; uploaden loopt via de queue en controleert wijzigingen op de server.
 6. Gebruik **Publiceren** om een plan te vergelijken, conflicten te bekijken en alleen de gewenste items in de queue te zetten. Voor productie vraagt de app een expliciete bevestiging.

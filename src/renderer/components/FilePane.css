@@ -1,0 +1,62 @@
+.file-pane.file-columns-custom .file-row {
+  grid-template-columns: var(--file-column-template);
+  width: max(100%, calc(var(--file-column-content-width) + 56px));
+  min-width: 100%;
+}
+
+.file-pane .file-column-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  color: #7188a8;
+  font-size: 9px;
+}
+
+.file-pane .file-column-heading > button {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.file-pane .file-column-resizer {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.file-pane .file-column-resizer::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: 1px;
+  background: var(--border);
+}
+
+.file-pane .file-column-resizer:hover::after,
+.file-pane .file-column-resizer:focus-visible::after {
+  background: var(--accent);
+}
+
+.file-pane.file-column-resizing,
+.file-pane.file-column-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+@media (max-width: 1200px) {
+  .file-pane.file-columns-custom .file-row {
+    width: max(100%, calc(var(--file-column-content-width) + 32px));
+  }
+
+  .file-pane .file-column-resizer {
+    right: -6px;
+  }
+}

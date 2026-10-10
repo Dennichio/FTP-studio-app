@@ -22,21 +22,25 @@ export interface FilterSet { display: FilterRule[]; transfer: FilterRule[]; sync
 export interface PublishEnvironment { id: string; name: string; profileId: string; remoteRoot: string; production: boolean; }
 export interface Project {
   id: string; name: string; localRoot: string; profileId?: string; remoteRoot: string;
-  filters: FilterSet; environments: PublishEnvironment[]; previewUrl?: string;
+  filters: FilterSet; filterProfiles?: { id: string; name: string; filters: FilterSet }[]; environments: PublishEnvironment[]; previewUrl?: string;
   bookmarks: Bookmark[]; openFiles?: string[];
 }
 export interface AppSettings {
   theme: 'dark' | 'light' | 'system'; showHidden: boolean; syncNavigation: boolean;
   editorFontSize: number; wordWrap: boolean; autoUpload: boolean;
-  layout?: { browserHeight?: number; queueHeight?: number; editorMode?: string; browserHidden?: boolean; queueHidden?: boolean; queueExpanded?: boolean; maximizedPanel?: 'browser' | 'editor' | 'queue' | null };
+  layout?: { browserHeight?: number; queueHeight?: number; editorMode?: string; browserHidden?: boolean; queueHidden?: boolean; queueExpanded?: boolean; maximizedPanel?: 'browser' | 'editor' | 'queue' | null; fileColumns?: { local?: number[]; remote?: number[] }; editorSplitPercent?: number };
   lastProjectId?: string;
 }
-export interface Snippet { id: string; name: string; language: string; body: string; }
+export interface Snippet { id: string; name: string; language: string; body: string; group?: string; }
 export interface FileSnapshot { size: number; modifiedAt: number | null; checksum?: string; }
 export interface DocumentData {
   id: string; path: string; name: string; content: string; encoding: 'utf8'; eol: 'LF' | 'CRLF';
   remote?: { connectionId: string; path: string; original: FileSnapshot; endpointKey?: string };
   original: FileSnapshot; recovery?: boolean;
+}
+export interface DocumentComparison {
+  path: string; content: string; eol: 'LF' | 'CRLF'; snapshot: FileSnapshot;
+  source: 'local' | 'remote'; checkedAt: number;
 }
 export interface SearchQuery {
   text: string; regex: boolean; caseSensitive: boolean; glob?: string;
@@ -63,7 +67,7 @@ export interface PublishItem {
   relativePath: string; localPath: string; remotePath: string; action: 'upload' | 'download' | 'conflict' | 'skip';
   reason: string; selected: boolean; local?: FileSnapshot; remote?: FileSnapshot; dependency?: boolean; excluded?: boolean;
 }
-export interface PublishPlan { id: string; projectId: string; connectionId: string; environmentId?: string; production: boolean; items: PublishItem[]; createdAt: number; }
+export interface PublishPlan { id: string; projectId: string; connectionId: string; environmentId?: string; production: boolean; items: PublishItem[]; createdAt: number; warnings?: string[]; }
 export interface BootstrapData { profiles: ConnectionProfile[]; projects: Project[]; settings: AppSettings; snippets: Snippet[]; connections: ConnectionState[]; queue: TransferJob[]; logs: LogEntry[]; recoveries: DocumentData[]; }
 export interface Api {
   bootstrap: { args: void; result: BootstrapData };
@@ -74,19 +78,24 @@ export interface Api {
   mutateLocal: { args: { operation: 'mkdir' | 'create' | 'rename' | 'delete' | 'copy' | 'move'; path: string; destination?: string }; result: void };
   saveProfile: { args: { profile: ConnectionProfile; credentials?: Credentials }; result: ConnectionProfile };
   deleteProfile: { args: { id: string }; result: void };
+  testConnection: { args: { profile: ConnectionProfile; credentials?: Credentials }; result: void };
   connect: { args: { profile: ConnectionProfile; credentials?: Credentials }; result: ConnectionState };
   disconnect: { args: { connectionId: string }; result: void };
   listRemote: { args: { connectionId: string; path: string; expectedEndpoint?: string }; result: FileEntry[] };
   statRemote: { args: { connectionId: string; path: string; expectedEndpoint?: string }; result: FileEntry | null };
+  createRemoteFile: { args: { connectionId: string; expectedEndpoint: string; path: string; projectId?: string }; result: TransferJob[] };
+  copyRemoteFile: { args: { connectionId: string; expectedEndpoint: string; path: string; destination: string; expectedSource: FileSnapshot; projectId?: string }; result: TransferJob[] };
   mutateRemote: { args: { connectionId: string; expectedEndpoint?: string; operation: 'mkdir' | 'rename' | 'delete' | 'chmod'; path: string; destination?: string; mode?: string; recursive?: boolean; confirmed?: boolean }; result: void };
   searchRemote: { args: { connectionId: string; expectedEndpoint?: string; root: string; query: SearchQuery; requestId: string }; result: FileEntry[] };
   cancelSearch: { args: { requestId: string }; result: void };
   openDocument: { args: { path: string; connectionId?: string; expectedEndpoint?: string }; result: DocumentData };
+  compareDocument: { args: { id: string }; result: DocumentComparison };
   saveDocument: { args: { id: string; content: string; path?: string }; result: DocumentData };
   recoverDocument: { args: { id: string; content: string }; result: void };
   discardRecovery: { args: { id: string }; result: void };
   enqueue: { args: { requests: TransferRequest[] }; result: TransferJob[] };
-  queueAction: { args: { action: 'pause' | 'resume' | 'cancel' | 'retry' | 'clear' | 'priority'; ids?: string[]; priority?: number }; result: void };
+  queueAction: { args: { action: 'pause' | 'resume' | 'cancel' | 'retry' | 'clear' | 'priority' | 'raisePriority' | 'lowerPriority'; ids?: string[]; priority?: number }; result: void };
+  setProjectOpenFiles: { args: { projectId: string; paths: string[] }; result: Project };
   saveProject: { args: { project: Project }; result: Project };
   deleteProject: { args: { id: string }; result: void };
   saveSettings: { args: { settings: AppSettings }; result: void };
@@ -122,5 +131,16 @@ export interface RemoteAccess {
   profile(connectionId: string): ConnectionProfile;
   acquire(connectionId: string, purpose: 'navigation' | 'transfer', signal?: AbortSignal): Promise<SessionLease>;
 }
-export interface KeyValueStore { get<T>(key: string, fallback: T): T; set<T>(key: string, value: T): void; delete(key: string): void; }
+export interface PersistedQueueRecord {
+  job: TransferJob; kind: 'file' | 'directory'; endpoint?: string; readyAt?: number;
+  transaction?: { stage: string; backup?: string; phase: 'prepared' | 'backed-up' | 'installed' };
+}
+export interface QueuePersistence {
+  load(): PersistedQueueRecord[];
+  commit(upserts: PersistedQueueRecord[], removedIds: string[]): void;
+}
+export interface KeyValueStore {
+  get<T>(key: string, fallback: T): T; set<T>(key: string, value: T): void; delete(key: string): void;
+  queue?: QueuePersistence;
+}
 export type Logger = (level: LogEntry['level'], message: string, connectionId?: string) => void;

@@ -11,7 +11,7 @@ FTP Studio is een Electron-desktopapp met drie hoofdgebieden:
 
 De renderer spreekt met het mainproces via een beperkte preload-bridge. Bestands- en netwerk-I/O vindt in main/core plaats, niet in de renderer. Electron-instantiatie en Windows-integratie zijn nog niet op Windows gevalideerd.
 
-IPC-verzoeken worden aan de vertrouwde hoofdframe-afzender gekoppeld. De ingebouwde HTML-preview gebruikt een iframe met `sandbox="allow-scripts"`, zonder same-originrecht; alleen geïnjecteerde selectiecode mag onder de nonce-CSP lopen. Projectscripts/eventhandlers worden uit deze preview verwijderd. Relatieve assets worden via begrensde main-processlezingen ingesloten. Dit is geen interne JavaScript-livepreview. De externe loopbackserver is een afzonderlijk pad met projectgebonden toegangstoken/cookie en voert zelf geen PHP uit. De daadwerkelijke Electron/CSP-grens heeft voorbereide, nog niet uitgevoerde e2e-tests.
+IPC-verzoeken worden aan de vertrouwde hoofdframe-afzender gekoppeld. De ingebouwde HTML-preview gebruikt een iframe met `sandbox="allow-scripts"`, zonder same-originrecht; alleen geïnjecteerde selectiecode mag onder de nonce-CSP lopen. Projectscripts/eventhandlers worden uit deze preview verwijderd. Relatieve assets worden via begrensde main-processlezingen ingesloten. Dit is geen interne JavaScript-livepreview. De externe loopbackserver is een afzonderlijk pad met projectgebonden toegangstoken/cookie en voert zelf geen PHP uit. De Electron/CSP-grens heeft e2e-tests; de volledige GUI-suite slaagde 31/31 onder Linux/Xvfb. Dit valideert geen Windows-runtime of DPI-gedrag.
 
 ## Bronnen bewerken
 
@@ -21,7 +21,7 @@ Dit is geen algemene sanitizer of sandbox. HTML-preview wordt in de geïsoleerde
 
 ## Remote verbindingen en wachtrij
 
-`basic-ftp` verzorgt FTP/FTPS en `ssh2-sftp-client` verzorgt SFTP. Sessies worden via leases beheerd. Transfers lopen via een persistente, begrensde wachtrij. De queue plant bestanden/mappen uit, begrenst expansie en parallelisme, controleert roots/symlinks/gevoelige paden, maakt stagingbestanden en verifieert waar mogelijk snapshots/checksums. Bij conflicten wordt de actie gestopt. Rollback gebruikt tijdelijke bestanden en snapshots; exacte garanties zijn afhankelijk van server en protocol.
+`basic-ftp` verzorgt FTP/FTPS en `ssh2-sftp-client` verzorgt SFTP. Sessies worden via leases beheerd. Waar beschikbaar gebruikt de browser MLST voor strikte metadata; bij MLST 550 valt hij terug op listings. Transfers lopen via een persistente, begrensde wachtrij met incrementeel duurzaam SQLite-journal. Normale UI-statusupdates worden via een globale 100 ms timer samengevoegd; clear/close flushen direct. Dit is geen harde bovengrens voor update-latency. Duurzame transactiefasen worden direct opgeslagen. De queue plant bestanden/mappen uit, begrenst expansie en parallelisme, controleert roots/symlinks/gevoelige paden, maakt stagingbestanden en verifieert waar mogelijk snapshots/checksums. Bij conflicten wordt de actie gestopt. Rollback gebruikt tijdelijke bestanden en snapshots; exacte garanties zijn afhankelijk van server en protocol.
 
 FTP is een protocol zonder transportversleuteling. FTPS controleert TLS volgens de protocoladapter; SFTP vergelijkt de SSH-hostkey met de ingestelde SHA-256-fingerprint. Er is geen trust-on-first-use.
 
@@ -33,7 +33,7 @@ FTP/SFTP bieden hier geen algemene server-side conditional rename/CAS. Metadata 
 
 ## Opslag en geheimen
 
-`SqliteStore` slaat appstatus op in SQLite onder Electron `userData` (tenzij `FTP_STUDIO_DATA_DIR` expliciet is ingesteld). CredentialVault versleutelt credentials via Electron `safeStorage`; tekstwaarden komen niet als credentialveld in SQLite terecht. Beschikbaarheid en backendgedrag moeten bij de Windows-releasecontrole op de doelversies worden bevestigd. Windows gebruikt user-scoped systeemopslag/DPAPI via Electron.
+`SqliteStore` slaat appstatus op in SQLite onder Electron `userData` (tenzij `FTP_STUDIO_DATA_DIR` expliciet is ingesteld). CredentialVault versleutelt credentials via Electron `safeStorage` en bindt ze aan de verbindingsidentiteit; tekstwaarden komen niet als credentialveld in SQLite terecht. Legacycredentials moeten opnieuw worden ingevoerd en opgeslagen. Beschikbaarheid en backendgedrag moeten bij de Windows-releasecontrole op de doelversies worden bevestigd. Windows gebruikt user-scoped systeemopslag/DPAPI via Electron.
 
 Lokale saves schrijven een exclusief tijdelijk bestand, synchroniseren het, toetsen de oude inhoud en testen hardlinkondersteuning vóór het verplaatsen van het origineel naar `.ftp-studio-backups`. Een exclusieve hardlink installeert het nieuwe bestand en weigert een intussen opnieuw gemaakte bestemming. Herstel bewaart het origineel en vervangt geen nieuw aangetroffen bestand. Dit vereist hardlinks op hetzelfde bestandssysteem. POSIX-modebits worden meegenomen; Windows-ACL, eigenaar, alternate data streams en uitgebreide metadata worden niet gegarandeerd overgenomen. Windows/NTFS-crashgedrag en directory-fsyncgaranties zijn niet bewezen. Bewaarde backups hebben nog geen uitgewerkte retentiebediening.
 
@@ -43,10 +43,21 @@ Lokale saves schrijven een exclusief tijdelijk bestand, synchroniseren het, toet
 
 ## Build en platformstatus
 
-Buildscripts gebruiken TypeScript, esbuild en Electron Builder. `npm run dist:win` vraagt een Windows x64 ZIP-target aan; de instelling is geen bewijs dat het commando of artifact is geslaagd. De dependency-installatie en officiële Electron-download zijn na expliciete netwerkgoedkeuring geslaagd. Typecheck, esbuild-applicatiebuild en 173/173 Vitest-tests slagen op Linux; Windows-packaging, Windows-runtime en renderer-e2e zijn nog niet vastgesteld.
+Buildscripts gebruiken TypeScript, esbuild en Electron Builder. `npm run dist:win` vraagt een Windows x64 ZIP-target aan; de instelling is geen bewijs dat het commando of artifact is geslaagd. Dependencies en Electron zijn geïnstalleerd. Typecheck/build en Vitest (375/375, 16 suites, 63,25 s) slaagden in de vorige versie op Linux. Na de recentste wijzigingen lopen een geslaagde volledige Vitest-run en een lopende 31-scenario GUI-rerun. De eerder cross-gecompileerde Windows x64 ZIP is stale; definitieve packaging en Windows-runtimevalidatie blijven open.
 
 Architectuuronderdelen die bestaan zijn niet gelijk aan volledige functionele dekking. Zie de oorspronkelijke P0/P1-matrix in [SPECIFICATION.md](SPECIFICATION.md) voor ontbrekende bediening en functies, en [TESTRESULTS.md](TESTRESULTS.md) voor de daadwerkelijk uitgevoerde offlinechecks.
 
 ### Laatste opslagcontrole van POSIX-rechten
 
 De editor houdt zijn stagingbestand open tijdens de bestandswissel. Wijzigt de POSIX-mode van de bewaarde oorspronkelijke inode vóór de eindcontrole, dan rapporteert opslaan een conflict en beperkt het via de eigen filehandle zijn staginginode tot de doorsnede van de gedetecteerde rechten. Dit voorkomt chmod van een door een ander proces vervangen doelpad. Deze controles zijn geen atomair compare-and-swap met andere processen; wijzigingen ná de laatste controle, Windows-ACL's, ownership en aanvullende attributen vallen buiten de bewezen garantie.
+
+
+De twee loopback-FTP-benchmarkmatrices zijn elk 16 scenario’s en controleerden 8.128 uitvoerbestanden met SHA-256. Zie [docs/BENCHMARKS.md](docs/BENCHMARKS.md) voor nulmeting, geoptimaliseerde meting en beperkingen. Resultaten gelden voor de betreffende Linux-testserver en niet als Windows-, internet- of productieproviderclaim.
+
+## Toevoegingen op 10 oktober 2026
+
+`documentComparison.ts` leest lokale of remote UTF-8-momentopnamen tot 8 MiB. Remote lezingen gebruiken afzonderlijke private tijdelijke bestanden en de vastgelegde documentbestemming, met metadata- en endpointcontrole vóór en na de overdracht. Maximaal vier vergelijkingen, time-out en afsluitopruiming begrenzen het werk. De renderer gebruikt aparte alleen-lezen Monaco-modellen; het sluiten van het venster negeert late resultaten.
+
+Bestandskolommen worden per paneel onder `settings.layout.fileColumns` opgeslagen. Pointer- en toetsenbordacties bewaren alleen bij afronden; annuleren herstelt de eerdere breedte. `editorSplitPercent` volgt hetzelfde principe. Deze layoutwijzigingen veranderen geen bestanden.
+
+De rendererbundel vervangt Monaco's ingebouwde DOMPurify door de expliciete 3.4.16-dependency. `dist/renderer/dependency-inputs.json` legt versie en daadwerkelijke bundelinput vast; de build faalt bij een afwijkende sanitizerbron.

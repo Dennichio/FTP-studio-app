@@ -33,7 +33,11 @@ function parseSource(source: string) {
   // covers PHP close delimiters embedded in quoted strings and heredocs: no PHP lexer
   // is assumed and no apparently static fragment is treated as safe to edit.
   if (dynamicPattern.test(source)) issues.push('Dynamische PHP-/templatebron: visueel bewerken is geblokkeerd; gebruik de code-editor.');
-  const document = parse(source, { sourceCodeLocationInfo: true, onParseError(error) {
+  // parse5 receives an already decoded string and treats a leading BOM as body
+  // text, unlike the browser's byte decoder. Mask only that signature for parsing;
+  // one UTF-16 space keeps every source/attribute offset and the original bytes intact.
+  const parserSource = source.startsWith('\uFEFF') ? ` ${source.slice(1)}` : source;
+  const document = parse(parserSource, { sourceCodeLocationInfo: true, onParseError(error) {
     if (error.code !== 'missing-doctype') issues.push(`HTML moet eerst worden hersteld: ${error.code}.`);
   } });
   const nodes: SourceNode[] = [];

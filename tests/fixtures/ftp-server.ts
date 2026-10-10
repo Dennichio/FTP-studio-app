@@ -2,10 +2,14 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { posix } from 'node:path';
 
 /** A small real control/data server, intentionally only implementing commands exercised by these tests. */
-export async function ftpFixture(options: { stallDownload?: boolean } = {}) {
+export async function ftpFixture(options: { stallDownload?: boolean; controlNoDelay?: boolean; supportsMlst?: boolean; advertiseMlst?: boolean } = {}) {
   const files = new Map<string, Buffer>(); const advertisedSizes = new Map<string, number>(); const directories = new Set(['/']); const sockets = new Set<Socket>(); const passiveServers = new Set<Server>();
-  const fixture = { port: 0, files, advertisedSizes, directories, downloadStarted: false, close: async () => { for (const socket of sockets) socket.destroy(); await Promise.all([...passiveServers].map(server => new Promise<void>(resolve => server.close(() => resolve())))); await new Promise<void>(resolve => server.close(() => resolve())); } };
+  const mlstResponses = new Map<string, string>(), commandCounts = new Map<string, number>();
+  const chmodCalls: { path: string; mode: string }[] = [];
+  const fixture = { port: 0, files, advertisedSizes, directories, chmodCalls, mlstResponses, commandCounts, downloadStarted: false, close: async () => { for (const socket of sockets) socket.destroy(); await Promise.all([...passiveServers].map(server => new Promise<void>(resolve => server.close(() => resolve())))); await new Promise<void>(resolve => server.close(() => resolve())); } };
   const server = createServer(control => {
+    // Opt-in benchmark control: preserve the original fixture's TCP behavior by default.
+    if (options.controlNoDelay) control.setNoDelay(true);
     sockets.add(control); control.on('close', () => sockets.delete(control)); control.on('error', () => undefined);
     let buffer = ''; let cwd = '/'; let renameFrom = ''; let restart = 0; let dataServer: Server | undefined; let dataSocket: Promise<Socket> | undefined;
     const reply = (line: string) => control.write(line + '\r\n');
@@ -28,10 +32,19 @@ export async function ftpFixture(options: { stallDownload?: boolean } = {}) {
     };
     const command = async (line: string) => {
       const split = line.indexOf(' '); const verb = (split < 0 ? line : line.slice(0, split)).toUpperCase(); const arg = split < 0 ? '' : line.slice(split + 1);
+      commandCounts.set(verb, (commandCounts.get(verb) ?? 0) + 1);
       switch (verb) {
         case 'USER': reply('331 Password needed'); break;
         case 'PASS': reply('230 Logged in'); break;
-        case 'FEAT': control.write('211-Features\r\n MLST type*;size*;modify*;\r\n EPSV\r\n REST STREAM\r\n211 End\r\n'); break;
+        case 'FEAT': control.write(`211-Features\r\n${options.advertiseMlst === false ? '' : ' MLST type*;size*;modify*;\r\n'} EPSV\r\n REST STREAM\r\n211 End\r\n`); break;
+        case 'MLST': {
+          if (!options.supportsMlst) { reply('502 Unsupported command'); break; }
+          const target = path(arg), override = mlstResponses.get(target);
+          if (override !== undefined) { reply(override); break; }
+          const bytes = files.get(target), directory = directories.has(target);
+          if (!bytes && !directory) { reply('550 Missing file'); break; }
+          reply(`250-Listing\r\n type=${directory ? 'dir' : 'file'};size=${directory ? 0 : advertisedSizes.get(target) ?? bytes!.length};modify=20260101000000; ${target}\r\n250 End`); break;
+        }
         case 'SYST': reply('215 UNIX Type: L8'); break;
         case 'TYPE': case 'STRU': case 'OPTS': reply('200 OK'); break;
         case 'PWD': reply(`257 "${cwd}"`); break;
@@ -54,11 +67,29 @@ export async function ftpFixture(options: { stallDownload?: boolean } = {}) {
           const start = restart; restart = 0; await data(async socket => { await new Promise<void>(resolve => socket.end(bytes.subarray(start), resolve)); }); break;
         }
         case 'RNFR': renameFrom = path(arg); reply('350 Rename destination needed'); break;
-        case 'RNTO': { const bytes = files.get(renameFrom); if (bytes) { files.set(path(arg), bytes); files.delete(renameFrom); reply('250 Renamed'); } else reply('550 Missing file'); break; }
+        case 'RNTO': {
+          const target = path(arg), bytes = files.get(renameFrom);
+          if (bytes) {
+            files.set(target, bytes); files.delete(renameFrom);
+            if (advertisedSizes.has(renameFrom)) { advertisedSizes.set(target, advertisedSizes.get(renameFrom)!); advertisedSizes.delete(renameFrom); }
+            reply('250 Renamed');
+          } else if (directories.has(renameFrom) && renameFrom !== '/' && !directories.has(target) && !files.has(target) && !target.startsWith(renameFrom + '/')) {
+            const folders = [...directories].filter(item => item === renameFrom || item.startsWith(renameFrom + '/'));
+            const children = [...files].filter(([item]) => item.startsWith(renameFrom + '/'));
+            for (const item of folders) directories.delete(item);
+            for (const item of folders) directories.add(target + item.slice(renameFrom.length));
+            for (const [item, content] of children) {
+              const moved = target + item.slice(renameFrom.length); files.delete(item); files.set(moved, content);
+              if (advertisedSizes.has(item)) { advertisedSizes.set(moved, advertisedSizes.get(item)!); advertisedSizes.delete(item); }
+            }
+            reply('250 Renamed');
+          } else reply('550 Missing source or invalid destination');
+          renameFrom = ''; break;
+        }
         case 'DELE': files.delete(path(arg)); reply('250 Deleted'); break;
         case 'MKD': directories.add(path(arg)); reply('257 Directory created'); break;
         case 'RMD': directories.delete(path(arg)); reply('250 Directory removed'); break;
-        case 'SITE': reply('200 Permissions changed'); break;
+        case 'SITE': { const match = /^CHMOD ([0-7]{3,4}) (.+)$/.exec(arg); if (!match) { reply('500 Invalid CHMOD'); break; } chmodCalls.push({ path: path(match[2]), mode: match[1] }); reply('200 Permissions changed'); break; }
         case 'SIZE': { const bytes = files.get(path(arg)); reply(bytes ? `213 ${bytes.length}` : '550 Missing file'); break; }
         case 'QUIT': reply('221 Goodbye'); control.end(); break;
         default: reply('502 Unsupported command');
