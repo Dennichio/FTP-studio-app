@@ -88,6 +88,8 @@ describe('safe local workspace', () => {
 
   it('probes unsupported hardlinks before moving an original and preserves permissions in its backup', async () => {
     const root = await temp(); const file = path.join(root, 'a.txt'); await fs.writeFile(file, 'original', { mode: 0o640 });
+    // The creation mode is filtered by umask; establish the fixture's intended bits explicitly.
+    if (process.platform !== 'win32') await fs.chmod(file, 0o640);
     const original = await readTextFile(file);
     vi.spyOn(fs, 'link').mockRejectedValue(Object.assign(new Error('unsupported'), { code: 'EPERM' }));
     await expect(safeSaveTextFile(file, 'editor', original.snapshot)).rejects.toThrow('vereist hardlinks');

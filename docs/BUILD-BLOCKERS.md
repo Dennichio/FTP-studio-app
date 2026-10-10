@@ -1,3 +1,15 @@
+# Netwerkblokkade opgelost — 10 oktober 2026
+
+De expliciete uitvoeringsgoedkeuring met `sandbox_permissions: require_escalated` werkte in deze bestaande Base Environment. De begrensde HTTPS-proef naar `https://registry.npmjs.org/typescript` gaf HTTP 200. De eerdere `with_additional_permissions`-aanvragen hadden geen bruikbaar resultaat opgeleverd; dat bewijst niet dat de registry of deze omgeving permanent onbereikbaar was.
+
+Daarna is `npm install --ignore-scripts --fetch-retries=0 --fetch-timeout=15000 --cache /tmp/ftp-studio-npm` geslaagd: 367 pakketten geïnstalleerd en package-lock.json aangemaakt. `npm ls --depth=0 --offline` vindt alle achttien directe dependencies. De officiële Electron 41.10.7-runtime is eveneens via de bestaande proxy gedownload met de meegeleverde checksumcontrole. Geen TLS-controle uitgeschakeld en geen proxy omzeild.
+
+De beperkte standaard-shell kan nog steeds geen netwerk gebruiken. Voor noodzakelijke netwerkcommando's en tests met lokale sockets is de expliciete goedkeuringsroute gebruikt. Er is voor npm en Electron geen overstap naar een nieuwe cloudomgeving nodig. Windows-runtimevalidatie en verdere P0/P1-afwerking blijven afzonderlijk nodig; zie TESTRESULTS.md en PROGRESS.md.
+
+---
+
+# Historische diagnose vóór de geslaagde expliciete goedkeuring
+
 # Concrete bouwblokkade op 9 oktober 2026
 
 De machine heeft Node.js 24.19.0, npm 11.9.0 en Chromium, maar geen geïnstalleerde projectdependencies of Electron-runtime. `npm ls --depth=0 --offline` bevestigt ontbrekende dependencies. De eerste lockfile kan pas worden gegenereerd wanneer de registry bereikbaar is.

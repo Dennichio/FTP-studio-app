@@ -504,8 +504,7 @@ class SftpSession extends ProtocolSession {
     if (this.closed) return; this.closed = true;
     // Destroy the SSH socket after requesting shutdown; no hanging stream survives cancellation.
     const ending = this.client.end();
-    const underlying = (this.client as unknown as { client?: { destroy(): void } }).client;
-    underlying?.destroy();
+    this.client.client.destroy();
     await ending.catch(() => undefined);
   }
 }
@@ -538,8 +537,7 @@ export async function createProtocolSession(profile: ConnectionProfile, credenti
       if (root?.kind !== 'directory') throw new Error('Remote hoofdmap bestaat niet of is geen map.');
       return session;
     } catch (error) {
-      const underlying = (client as unknown as { client?: { destroy(): void } }).client;
-      underlying?.destroy(); await client.end().catch(() => undefined);
+      client.client.destroy(); await client.end().catch(() => undefined);
       if (observed && (!pin || !timingSafeEqual(pin, Buffer.from(observed.slice(7), 'base64')))) throw new Error(`${pin ? 'SSH-hostsleutel wijkt af van de opgeslagen sleutel' : 'Onbekende SSH-hostsleutel'}: ${observed}. Controleer deze vingerafdruk via een vertrouwd kanaal en sla hem op in het profiel.`);
       throw error;
     }

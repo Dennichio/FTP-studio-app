@@ -34,7 +34,15 @@ export async function sftpFixture() {
         sftp.on('READDIR', (request, handle) => {
           const h = getHandle(handle); if (!h) { sftp.status(request, 4); return; }
           if (h.listed) { sftp.status(request, 1); return; } h.listed = true;
-          const entries = [...new Set([...files.keys(), ...directories, ...links, ...specialModes.keys()])].filter(path => path !== '/' && posix.dirname(path) === h.path).map(path => ({ filename: posix.basename(path), longname: posix.basename(path), attrs: attrs(path) }));
+          const entries = [...new Set([...files.keys(), ...directories, ...links, ...specialModes.keys()])].filter(path => path !== '/' && posix.dirname(path) === h.path).map(path => {
+            const attributes = attrs(path);
+            const types = new Map([[0o100000, '-'], [0o040000, 'd'], [0o120000, 'l'], [0o010000, 'p'], [0o020000, 'c'], [0o060000, 'b'], [0o140000, 's']]);
+            const type = types.get(attributes.mode & 0o170000) ?? '?';
+            const rights = Array.from({ length: 9 }, (_, index) => (attributes.mode & (1 << (8 - index))) ? 'rwx'[index % 3] : '-').join('');
+            const filename = posix.basename(path);
+            // ssh2-sftp-client v12 derives entry type and permissions from longname.
+            return { filename, longname: `${type}${rights} 1 test test ${attributes.size} Jan 1 00:00 ${filename}`, attrs: attributes };
+          });
           if (entries.length) sftp.name(request, entries); else sftp.status(request, 1);
         });
         sftp.on('OPEN', (request, path, flags) => { if ((flags & 8) && !files.has(path)) files.set(path, Buffer.alloc(0)); if ((flags & 16) && files.has(path)) files.set(path, Buffer.alloc(0)); if (!files.has(path)) sftp.status(request, 2); else opened(request, path, false); });
@@ -49,6 +57,9 @@ export async function sftpFixture() {
       });
     }));
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No SSH address');
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+  }); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No SSH address');
   return { port: address.port, fingerprint, userPrivateKey: privateKey, files, advertisedSizes, specialModes, directories, links, get authentications() { return authentications; }, close: async () => { for (const connection of connections) { connection.end(); connection._sock?.destroy(); } await new Promise<void>(resolve => server.close(() => resolve())); } };
 }

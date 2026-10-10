@@ -213,14 +213,14 @@ describe('protocol security', () => {
   it.each([undefined, 'SHA256:' + Buffer.alloc(32).toString('base64').replace(/=+$/, '')])('rejects unknown or mismatched host keys with the observed fingerprint', async pin => {
     const publicKey = Buffer.from('test-public-key'); const expected = 'SHA256:' + createHash('sha256').update(publicKey).digest('base64').replace(/=+$/, '');
     vi.spyOn(SftpClient.prototype, 'connect').mockImplementation(async config => { const verifier = config.hostVerifier as (key: Buffer) => boolean; expect(verifier(publicKey)).toBe(false); throw new Error('Host denied'); });
-    vi.spyOn(SftpClient.prototype, 'end').mockResolvedValue(undefined);
+    vi.spyOn(SftpClient.prototype, 'end').mockResolvedValue(true);
     await expect(createProtocolSession({ ...profile, protocol: 'sftp', hostKeySha256: pin }, { password: 'secret' })).rejects.toThrow(expected);
   });
   it('accepts an exact SHA256 pin and preserves password/key passphrase options', async () => {
     const publicKey = Buffer.from('trusted-public-key'); const hostKeySha256 = 'SHA256:' + createHash('sha256').update(publicKey).digest('base64').replace(/=+$/, '');
     const connect = vi.spyOn(SftpClient.prototype, 'connect').mockImplementation(async config => { expect((config.hostVerifier as (key: Buffer) => boolean)(publicKey)).toBe(true); return {} as never; });
     vi.spyOn(SftpClient.prototype, 'lstat').mockResolvedValue({ size: 0, mode: 0o40755, modifyTime: 0, accessTime: 0, uid: 0, gid: 0, isDirectory: true, isFile: false, isBlockDevice: false, isCharacterDevice: false, isSymbolicLink: false, isFIFO: false, isSocket: false });
-    vi.spyOn(SftpClient.prototype, 'end').mockResolvedValue(undefined);
+    vi.spyOn(SftpClient.prototype, 'end').mockResolvedValue(true);
     const session = await createProtocolSession({ ...profile, protocol: 'sftp', hostKeySha256 }, { password: 'secret', passphrase: 'key-secret' });
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({ password: 'secret', passphrase: 'key-secret', retries: 0 })); await session.close();
   });
@@ -276,7 +276,7 @@ describe('real SFTP sessions', () => {
     const server = await sftpFixture(); const directory = await mkdtemp(join(tmpdir(), 'ftp-studio-key-auth-')); let session: RemoteSession | undefined;
     try {
       const privateKeyPath = join(directory, 'user-key.pem'); const passphrase = 'fixture-key-passphrase';
-      const encryptedKey = createPrivateKey(server.userPrivateKey).export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase }); await writeFile(privateKeyPath, encryptedKey, { mode: 0o600 });
+      const encryptedKey = createPrivateKey(server.userPrivateKey).export({ type: 'pkcs1', format: 'pem', cipher: 'aes-256-cbc', passphrase }); await writeFile(privateKeyPath, encryptedKey, { mode: 0o600 });
       const ssh = { ...profile, protocol: 'sftp' as const, port: server.port, hostKeySha256: server.fingerprint, privateKeyPath };
       await expect(createProtocolSession(ssh, { passphrase: 'wrong-passphrase' })).rejects.toThrow(/key|passphrase|decrypt/i);
       session = await createProtocolSession(ssh, { passphrase }); expect(await session.list('/')).toEqual([]);

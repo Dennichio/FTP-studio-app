@@ -1,6 +1,6 @@
 # FTP Studio — functionele specificatie
 
-**Status:** beschrijving van de huidige broncode, versie 1.0.0. Dit document is geen bewijs van een afgerond of gevalideerd Windows-product. Windows-build, installer/ZIP-artifact, typecheck en Vitest-resultaten zijn nog niet beschikbaar; dependency-installatie werd geblokkeerd door ontbrekende shell-netwerktoegang.
+**Status:** beschrijving van de huidige broncode, versie 1.0.0. Dit document is geen bewijs van een afgerond of gevalideerd Windows-product. Dependencies en Electron zijn inmiddels via expliciete netwerkgoedkeuring geïnstalleerd. Typecheck, applicatiebuild en 173/173 Vitest-tests slagen op Linux. Windows-build, installer/ZIP-artifact, desktop-e2e en Windows-runtimevalidatie zijn nog niet beschikbaar.
 
 ## Doel en doelgroep
 

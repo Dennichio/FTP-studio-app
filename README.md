@@ -6,7 +6,7 @@ De applicatie biedt een beperkte bronbewuste HTML/CSS-inspector. Ze is geen voll
 
 ## Status
 
-De repository en buildconfiguratie zijn aanwezig, maar dependency-installatie werd geblokkeerd door shell-netwerktoegang. Typecheck, formele tests, Windows x64 artifact en Windows runtime zijn daarom nog niet vastgesteld. Bekijk [voortgang](PROGRESS.md), [specificatie](SPECIFICATION.md) en [releasechecklist](docs/RELEASE-CHECKLIST.md) voordat u productiegebruik overweegt.
+De expliciete netwerkgoedkeuring werkt in de bestaande omgeving. Dependencies en Electron zijn geïnstalleerd; de eerste volledige typecheck en applicatiebuild zijn geslaagd. De volledige Vitest-reeks slaagt: 173/173, inclusief lokale protocolfixtures. Er is nog geen gevalideerd Windows x64-artifact of Windows-runtimecontrole. Bekijk [voortgang](PROGRESS.md), [specificatie](SPECIFICATION.md) en [releasechecklist](docs/RELEASE-CHECKLIST.md) voordat u productiegebruik overweegt.
 
 ## Ontwikkelen
 
@@ -43,4 +43,4 @@ Zie de [gebruikershandleiding](docs/USER-GUIDE.md) voor de volledige werkwijze e
 
 De eigen broncode valt onder [MIT](LICENSE). Gebundelde dependencies behouden hun eigen licenties.
 
-Zodra `package-lock.json` is gegenereerd en gecontroleerd, gebruikt u `npm ci` voor reproduceerbare volgende installaties. Offline kerncontroles werken zonder npm-downloads met Node.js 24: `npm run test:offline`, `npm run test:queue:offline`, `npm run test:search:offline` `npm run test:connections:offline` en `npm run test:permissions:offline`. Deze vervangen de volledige tests en Windows-validatie niet.
+De gegenereerde `package-lock.json` legt de geïnstalleerde versies vast; gebruik `npm ci` voor volgende installaties. Offline kerncontroles werken zonder npm-downloads met Node.js 24: `npm run test:offline`, `npm run test:queue:offline`, `npm run test:search:offline` `npm run test:connections:offline` en `npm run test:permissions:offline`. Deze vervangen de volledige tests en Windows-validatie niet.

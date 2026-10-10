@@ -1,6 +1,6 @@
 # Werkelijk uitgevoerde controles
 
-Datum: 9 oktober 2026. Omgeving: Linux x64, Node.js 24.19.0, npm 11.9.0. Windows en Electron zijn niet gestart.
+Historie vanaf 9 oktober 2026; nieuwste resultaten staan onderaan. Omgeving: Linux x64, Node.js 24.19.0, npm 11.9.0. Windows en Electron zijn niet gestart.
 
 | Controle | Resultaat | Bewijs / grens |
 |---|---|---|
@@ -60,3 +60,21 @@ De P0/P1-dekkingsmatrix in [SPECIFICATION.md](SPECIFICATION.md) bevat ook ontbre
 De hoofdagent heeft de vijf meegeleverde offline scripts uitgevoerd: kern **5/5**, wachtrij **39/39**, servermetadatazoeken **7/7**, sessiemanager **10/10**, POSIX-rechten **5/5**. De laatste set is uitgebreid van drie naar vijf gevallen: late chmod van de verplaatste oorspronkelijke inode wordt gedetecteerd, en een nieuwe inode op hetzelfde doelpad wordt niet gechmod. De nieuwe onafhankelijke A-reviewer heeft de rechten- en kernsets eveneens uitgevoerd en de gewijzigde handlelevensduur statisch goedgekeurd. De bijbehorende Vitest-regressies zijn geschreven, maar niet via Vitest uitgevoerd.
 
 `npm ls --depth=0 --offline` bevestigt nog steeds **18 ontbrekende directe dependencies**. De netwerktoegangsaanvraag voor installatie is afgebroken zonder installatieresultaat. Er is geen nieuwe lockfile, volledige typecheck, Electron-start, live protocolbenchmark of Windows-build. De eerdere aantallen zijn historische testmomenten en mogen niet bij deze herhalingen worden opgeteld.
+
+## Volledige verificatie na netwerkgoedkeuring — 10 oktober 2026
+
+| Controle | Werkelijk resultaat | Grens |
+|---|---|---|
+| Begrensde HTTPS HEAD registry.npmjs.org/typescript met expliciete goedkeuring | HTTP 200 | Bewijst deze goedgekeurde route, niet netwerktoegang van de standaard sandbox. |
+| npm install --ignore-scripts | 367 pakketten geïnstalleerd; package-lock.json aangemaakt | Overige installatiehooks niet automatisch uitgevoerd. |
+| npm ls --depth=0 --offline | Exit 0; alle 18 directe dependencies aanwezig | Versies liggen vast in de lockfile. |
+| Officiële Electron-installer | Exit 0; Electron 41.10.7 gedownload via proxy en checksumcontrole | Geen GUI-start of Windows-uitvoering. |
+| npm run typecheck | Exit 0 | Echte TypeScript/TSX-controle, inclusief gedeclareerde bronnen en tests. |
+| npm run build | Exit 0 | Main, preload, renderer en lokale Monaco-workers/assets gebouwd. Geen Windows-package. |
+| Volledige Vitest-reeks met goedgekeurde loopback-sockets | **173/173 tests, 8/8 suites, exit 0; 27,25 s** | Linux, lokale fixtures; geen provider-, Windows- of representatieve prestatietest. |
+
+Suiteaantallen: remote 40, queue 39, workspace 23, security 6, main 13, publishing 8, remoteSearch 20, source 24. Voor de laatste geslaagde run faalden drie gevallen: ongeschikt sleutelformaat in een SFTP-fixture, incorrect READDIR-longname in die fixture en een umask-afhankelijke testvoorwaarde. Alle drie zijn met behoud van de controles gerepareerd en onafhankelijk gereviewd. Eerder gesignaleerde echte CSS-bronrange- en HTML-veiligheidsproblemen zijn eveneens gerepareerd; de source-suite slaagt nu volledig.
+
+De standaard-sandboxrun is afgebroken nadat protocoltestservers niet bruikbaar konden starten; er wordt daarvoor geen geslaagde volledige run geclaimd. De relevante fixtures weigeren voortaan expliciet een mislukte listen-aanvraag.
+
+Deze actuele resultaten vervangen de eerdere status 'dependencies ontbreken/typecheck niet uitgevoerd'. De historische tabellen blijven staan als verslag. Desktop-e2e, GUI/DPI, Windows DPAPI en Windows-distributie zijn nog niet getest; resterende producteisen blijven open.

@@ -11,7 +11,7 @@ Statuslabels beschrijven repositorybroncode, niet een door Windows gevalideerd p
 |---|---|---|
 | Gecombineerde lokale en remote workspace | Aanwezig in broncode | Lokale en remote browser, projecten, rootmapping; Windows runtime niet geverifieerd. |
 | Dreamweaver-achtige editorervaring | Gedeeltelijk | Monaco + beperkte bronbewuste HTML/CSS-inspector; geen complete vrije page builder of site designer. |
-| Bestandscode bewerken en bewaren | Aanwezig in broncode | UTF-8 editor, save/recovery; formele typecheck/tests nog niet vastgesteld. |
+| Bestandscode bewerken en bewaren | Aanwezig in broncode | UTF-8 editor, save/recovery; typecheck en backendtests geslaagd. Renderer-/Windowsvalidatie open. |
 | HTML/CSS source-preserving visuele patches | Gedeeltelijk | parse5/PostCSS bronranges en guarded operations; dynamische/ambigue bron blokkeert inspector. |
 | PHP en templates | Gedeeltelijk | Bron blijft bewerkbaar in code-editor; PHP wordt niet uitgevoerd; lokale serverpreview optioneel; geen PHP dependencybeheer. |
 | FTP | Aanwezig in broncode | `basic-ftp`; FTP is onversleuteld en servercompatibiliteit niet geverifieerd. |
@@ -30,4 +30,4 @@ Statuslabels beschrijven repositorybroncode, niet een door Windows gevalideerd p
 | Preview van server-side PHP | Ontbreekt | App-runtime voert PHP niet uit; gebruiker kan loopback ontwikkelserver URL opgeven. |
 | Volledige Dreamweaver+FileZilla-pariteit | Ontbreekt | Huidige app is een beperkte geïntegreerde werkplek en biedt niet alle functies van die producten. |
 | Windows x64 distributie | Niet geverifieerd | Electron Builder ZIP-target geconfigureerd; artifact, start, signing en Windowsversies niet getest. |
-| Typecheck en Vitest | Niet geverifieerd | Dependency-installatie geblokkeerd; resultaten moeten na `npm ci` worden ingevuld. |
+| Typecheck en Vitest | Geverifieerd op Linux | Typecheck en volledige Vitest-reeks 173/173 geslaagd. Geen Windows- of desktop-e2e-bewijs. |

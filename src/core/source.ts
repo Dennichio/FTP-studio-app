@@ -1,5 +1,5 @@
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
-import postcss, { type Rule, type Declaration } from 'postcss';
+import postcss, { type Rule, type Declaration, type Document } from 'postcss';
 
 /** Offsets are UTF-16 offsets, matching Monaco and String.slice. No DOM serialization is used. */
 export interface SourceNode {
@@ -38,6 +38,7 @@ function parseSource(source: string) {
   } });
   const nodes: SourceNode[] = [];
   const originals = new Map<string, LocatedNode>();
+  const lastSiblingEnd = new Map<string | undefined, number>();
   const roots: string[] = [];
   function visit(node: DefaultTreeAdapterMap['node'], parent?: SourceNode, protectedParent = false) {
     let nextParent = parent;
@@ -58,6 +59,13 @@ function parseSource(source: string) {
         };
         if (parent && (mapped.start < parent.openEnd || mapped.end > parent.closeStart)) {
           issues.push('De HTML-parser heeft elementen verplaatst; herstel eerst de HTML-structuur.');
+        }
+        if (mapped.start < (lastSiblingEnd.get(parent?.id) ?? 0)) {
+          issues.push('De HTML-parser heeft elementen verplaatst; herstel eerst de HTML-structuur.');
+        }
+        lastSiblingEnd.set(parent?.id, mapped.end);
+        if (!loc.endTag && !voidTags.has(node.tagName)) {
+          issues.push('Een element heeft geen expliciete sluit-tag; herstel eerst de HTML-structuur.');
         }
         nodes.push(mapped); originals.set(mapped.id, node);
         if (parent) parent.children.push(mapped.id); else roots.push(mapped.id);
@@ -98,7 +106,8 @@ export type SourceOperation = { expectedSourceHash: string; nodeId: string } & (
   { type: 'setText'; text: string } |
   { type: 'setAttribute'; name: string; value: string | null } |
   { type: 'insert'; html: string; position: 'before' | 'after' | 'inside' } |
-  { type: 'duplicate' | 'remove' } |
+  { type: 'duplicate' } |
+  { type: 'remove' } |
   { type: 'move'; targetId: string; position: 'before' | 'after' | 'inside' }
 );
 function patchRanges(source: string, patches: Array<{ start: number; end: number; text: string }>): string {
@@ -166,9 +175,10 @@ export interface CssDeclaration { id: string; property: string; value: string; i
 export interface CssRule { id: string; selector: string; context: string[]; start: number; end: number; declarations: CssDeclaration[]; }
 export interface CssSourceMap { sourceHash: string; rules: CssRule[]; issues: string[]; editable: boolean; }
 function cssRange(node: Rule | Declaration) {
-  const start = node.source?.start?.offset, last = node.source?.end?.offset;
-  if (start === undefined || last === undefined) throw new Error('CSS-bronpositie ontbreekt.');
-  return { start, end: last + 1 };
+  const start = node.source?.start?.offset, end = node.source?.end?.offset;
+  if (start === undefined || end === undefined) throw new Error('CSS-bronpositie ontbreekt.');
+  // PostCSS source offsets delimit a half-open range, just like String.slice.
+  return { start, end };
 }
 function parseCss(source: string) {
   const root = postcss.parse(source, { from: undefined });
@@ -176,7 +186,7 @@ function parseCss(source: string) {
   const originals = new Map<string, Rule>();
   root.walkRules(rule => {
     const range = cssRange(rule), context: string[] = [];
-    for (let parent = rule.parent; parent; parent = parent.parent) if (parent.type === 'atrule') context.unshift(`@${parent.name} ${parent.params}`);
+    for (let parent: Rule['parent'] | Document = rule.parent; parent; parent = parent.parent) if (parent.type === 'atrule') context.unshift(`@${parent.name} ${parent.params}`);
     const mapped: CssRule = { id: `c${range.start}`, selector: rule.selector, context, ...range, declarations: [] };
     for (const child of rule.nodes) if (child.type === 'decl') {
       const span = cssRange(child);

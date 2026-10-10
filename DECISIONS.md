@@ -31,3 +31,9 @@
 | Meetbaarheid | Apart loopbackharnas voor 1/2/4/8 transfers en veel kleine bestanden | Harnas is geen meetresultaat; RAM-server en JSON-geheugenstore meten geen volledige productieketen. |
 
 Deze technische keuzes documenteren de huidige implementatie. Zij geven geen toestemming om ontbrekende expliciete P0/P1-eisen als afgerond te markeren. [SPECIFICATION.md](SPECIFICATION.md) houdt het resterende functionele werk bij; [TESTRESULTS.md](TESTRESULTS.md) scheidt uitgevoerde controles van voorbereide tests.
+
+## Eerste echte dependency- en integratiecontrole
+
+- Behoud de bestaande Base Environment: een expliciet goedgekeurde `require_escalated`-uitvoering bereikte npm via de beheerde proxy en downloadde ook Electron. De standaard-sandbox blijft beperkt; eerdere aanvragen met uitsluitend extra netwerkrechten bleven zonder bruikbaar resultaat.
+- Leg de opgeloste versies vast in package-lock.json. Een smalle lokale SFTP-v12-declaratie beschrijft de werkelijk gebruikte runtime-API omdat de beschikbare v9-types lstat en stream-offsetopties missen. Ze gebruikt getypeerde ssh2-streamopties en is onafhankelijk gereviewd; protocolcontroles zijn niet omzeild.
+- Gebruik de door PostCSS geleverde exclusieve eindoffset rechtstreeks. De echte regressietests toonden dat een extra +1 omliggende bronbytes kon beschadigen. Weiger bovendien visuele patches wanneer parserherstel bronranges verplaatst of expliciete sluit-tags ontbreken.

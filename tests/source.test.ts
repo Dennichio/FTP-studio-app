@@ -44,7 +44,12 @@ describe('source-preserving HTML editing', () => {
     expect(applySourcePatch(source, { ...select(source, 'p'), type: 'setText', text: 'y' })).toBe(source.replace('<p>x', '<p>y'));
   });
   it('refuses malformed, foster-parented and implicit closing markup', () => {
-    for (const source of ['<div><span>oops</div></span>', '<table><p>x</p></table>']) expect(buildSourceMap(source).editable).toBe(false);
+    for (const source of ['<div><span>oops</div></span>', '<table><p>x</p></table>', '<main><table><p>x</p></table></main>']) {
+      const map = buildSourceMap(source);
+      expect(map.editable).toBe(false);
+      expect(map.nodes.every(node => !node.editable)).toBe(true);
+      expect(() => applySourcePatch(source, { type: 'remove', nodeId: map.nodes[0].id, expectedSourceHash: map.sourceHash })).toThrow();
+    }
     const source = '<ul><li>one<li>two</ul>';
     expect(() => applySourcePatch(source, { ...select(source, 'li'), type: 'remove' })).toThrow();
   });
@@ -101,6 +106,14 @@ describe('CSS rule mapping and byte patches', () => {
     const map = buildCssSourceMap(source), rule = map.rules[1];
     expect(() => applyCssPatch(source, { expectedSourceHash: map.sourceHash, ruleId: rule.id, property: 'color', value: 'black' })).toThrow(/meermaals/);
     expect(applyCssPatch(source, { expectedSourceHash: map.sourceHash, ruleId: rule.id, declarationId: rule.declarations[1].id, property: 'color', value: 'black' })).toBe(source.replace('color: green;', 'color: black;'));
+  });
+  it('preserves closing braces, Unicode and CRLF when removing a final declaration', () => {
+    const css = '/* 🎨 */\r\n@supports (display: grid) { @media screen { .x {color:red} } }\r\n';
+    const map = buildCssSourceMap(css), rule = map.rules[0];
+    expect(rule.context).toEqual(['@supports (display: grid)', '@media screen']);
+    expect(css.slice(rule.start, rule.end)).toBe('.x {color:red}');
+    expect(css.slice(rule.declarations[0].start, rule.declarations[0].end)).toBe('color:red');
+    expect(applyCssPatch(css, { expectedSourceHash: map.sourceHash, ruleId: rule.id, property: 'color', value: null })).toBe(css.replace('color:red', ''));
   });
   it('inserts a property after an unterminated declaration without joining values', () => {
     const css = '.x { color: red }';

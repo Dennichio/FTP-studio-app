@@ -43,7 +43,7 @@ Lokale saves schrijven een exclusief tijdelijk bestand, synchroniseren het, toet
 
 ## Build en platformstatus
 
-Buildscripts gebruiken TypeScript, esbuild en Electron Builder. `npm run dist:win` vraagt een Windows x64 ZIP-target aan; de instelling is geen bewijs dat het commando of artifact is geslaagd. Op dit moment is de dependency-installatie geblokkeerd door shell-netwerktoegang, dus Windows-build, typecheck, Vitest en renderer-e2e zijn niet vastgesteld.
+Buildscripts gebruiken TypeScript, esbuild en Electron Builder. `npm run dist:win` vraagt een Windows x64 ZIP-target aan; de instelling is geen bewijs dat het commando of artifact is geslaagd. De dependency-installatie en officiële Electron-download zijn na expliciete netwerkgoedkeuring geslaagd. Typecheck, esbuild-applicatiebuild en 173/173 Vitest-tests slagen op Linux; Windows-packaging, Windows-runtime en renderer-e2e zijn nog niet vastgesteld.
 
 Architectuuronderdelen die bestaan zijn niet gelijk aan volledige functionele dekking. Zie de oorspronkelijke P0/P1-matrix in [SPECIFICATION.md](SPECIFICATION.md) voor ontbrekende bediening en functies, en [TESTRESULTS.md](TESTRESULTS.md) voor de daadwerkelijk uitgevoerde offlinechecks.
 

@@ -14,7 +14,10 @@ export async function ftpFixture(options: { stallDownload?: boolean } = {}) {
       if (dataServer) { dataServer.close(); passiveServers.delete(dataServer); }
       const passive = createServer(); dataServer = passive; passiveServers.add(passive);
       dataSocket = new Promise(resolve => passive.once('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => undefined); resolve(socket); }));
-      await new Promise<void>(resolve => passive.listen(0, '127.0.0.1', resolve)); const address = passive.address(); if (!address || typeof address === 'string') throw new Error('No passive address');
+      await new Promise<void>((resolve, reject) => {
+        passive.once('error', reject);
+        passive.listen(0, '127.0.0.1', () => { passive.removeListener('error', reject); resolve(); });
+      }); const address = passive.address(); if (!address || typeof address === 'string') throw new Error('No passive address');
       reply(extended ? `229 Entering Extended Passive Mode (|||${address.port}|)` : `227 Entering Passive Mode (127,0,0,1,${address.port >> 8},${address.port & 255})`);
     };
     const data = async (action: (socket: Socket) => Promise<void>) => {
@@ -62,8 +65,11 @@ export async function ftpFixture(options: { stallDownload?: boolean } = {}) {
       }
     };
     let chain = Promise.resolve();
-    control.on('data', chunk => { buffer += chunk.toString(); let end: number; while ((end = buffer.indexOf('\r\n')) >= 0) { const line = buffer.slice(0, end); buffer = buffer.slice(end + 2); chain = chain.then(() => command(line)).catch(() => control.destroy()); } });
+    control.on('data', chunk => { buffer += chunk.toString(); let end: number; while ((end = buffer.indexOf('\r\n')) >= 0) { const line = buffer.slice(0, end); buffer = buffer.slice(end + 2); chain = chain.then(() => command(line)).catch(() => { control.destroy(); }); } });
     reply('220 Local FTP fixture');
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No server address'); fixture.port = address.port; return fixture;
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+  }); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No server address'); fixture.port = address.port; return fixture;
 }
