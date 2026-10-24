@@ -179,7 +179,7 @@ export class TransferQueue {
     this.records = (Array.isArray(saved) ? saved : []).filter(record => record?.job?.id && ['file', 'directory'].includes(record.kind)).map(record => {
       this.committed.set(record.job.id, structuredClone(record));
       const copy = structuredClone(record);
-      if (!terminal.has(copy.job.status)) {
+      if (!copy.archived && !terminal.has(copy.job.status)) {
         copy.job.status = 'paused';
         copy.job.speed = 0;
         copy.job.remainingSeconds = null;
@@ -192,9 +192,21 @@ export class TransferQueue {
     this.persist(restored);
   }
 
-  jobs(): TransferJob[] { return this.records.map(record => structuredClone(record.job)); }
+  jobs(includeArchived = false): TransferJob[] { return this.records.filter(record => includeArchived || !record.archived).map(record => structuredClone(record.job)); }
 
-  private localRoot(request: TransferRequest, profileRoot: string): string {
+  private async localRoot(request: TransferRequest, profileRoot: string): Promise<string> {
+    if (request.localRootOverride !== undefined) {
+      const supplied = request.localRootOverride;
+      if (typeof supplied !== 'string' || !path.isAbsolute(supplied) || supplied.includes('\0')) throw new UnsafePath('Een absolute lokale overdrachtsmap is verplicht.');
+      const root = path.resolve(supplied);
+      // Selecting an excluded directory itself must not hide its sensitive ancestors.
+      if (!permitted(root, request.allowSensitive)) throw new UnsafePath('Deze lokale overdrachtsmap is uitgesloten.');
+      await localSafe(root, root);
+      if (!(await fs.lstat(root)).isDirectory()) throw new UnsafePath('De gekozen lokale overdrachtsmap bestaat niet of is geen map.');
+      localContained(root, request.localPath);
+      this.guardManualCache(request);
+      return root;
+    }
     try { localContained(profileRoot, request.localPath); return profileRoot; } catch (error) {
       const cache = this.options.trustedCacheRoot;
       if (!cache || request.direction !== 'upload' || request.expectedRemote === undefined) throw error;
@@ -202,6 +214,12 @@ export class TransferQueue {
       if (resolved === path.resolve(cache)) throw new UnsafePath('Alleen een afzonderlijk bewaakt cachebestand mag worden geüpload.');
       return cache;
     }
+  }
+
+  private guardManualCache(request: TransferRequest): void {
+    if (request.localRootOverride === undefined || !this.options.trustedCacheRoot) return;
+    const relative = path.relative(path.resolve(this.options.trustedCacheRoot), path.resolve(request.localPath));
+    if (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) throw new UnsafePath('Cachebestanden vereisen de bewaakte documentupload; een handmatige overdrachtsmap is hiervoor niet toegestaan.');
   }
 
   async enqueue(requests: TransferRequest[]): Promise<TransferJob[]> {
@@ -215,15 +233,17 @@ export class TransferQueue {
       const endpoint = endpointIdentity(profile);
       if (request.expectedEndpoint !== undefined && request.expectedEndpoint !== endpoint) throw new Conflict('De verbindingsbestemming is gewijzigd. Open het oorspronkelijke document opnieuw voordat u overdraagt.');
       request.expectedEndpoint = endpoint;
-      const localRoot = this.localRoot(request, profile.localRoot);
+      const localRoot = await this.localRoot(request, profile.localRoot);
+      if (request.localRootOverride !== undefined) request.localRootOverride = localRoot;
       request.localPath = localContained(localRoot, request.localPath);
       request.remotePath = remoteContained(profile.remoteRoot, request.remotePath);
       await localSafe(localRoot, request.localPath);
-      if (localRoot !== profile.localRoot && !(await fs.lstat(request.localPath)).isFile()) throw new UnsafePath('Alleen een afzonderlijk bewaakt cachebestand mag worden geüpload.');
+      if (request.localRootOverride === undefined && localRoot !== profile.localRoot && !(await fs.lstat(request.localPath)).isFile()) throw new UnsafePath('Alleen een afzonderlijk bewaakt cachebestand mag worden geüpload.');
       const lease = await this.remote.acquire(request.connectionId, 'transfer');
       try {
         if (endpointIdentity(this.remote.profile(request.connectionId)) !== endpoint) throw new Conflict('De verbinding is tijdens het inplannen gewijzigd. Probeer opnieuw met de juiste server.');
         const walk = async (item: TransferRequest, nested: boolean): Promise<void> => {
+          this.guardManualCache(item);
           if (++expanded > MAX_EXPANSION) throw new Error('Te veel bestanden of mappen in één opdracht. Plan kleinere mappen afzonderlijk in.');
           const localRelative = path.relative(localRoot, item.localPath);
           const remoteRelative = path.posix.relative(profile.remoteRoot, item.remotePath);
@@ -297,6 +317,7 @@ export class TransferQueue {
     const pending: Promise<void>[] = [];
     const changed: Record[] = [];
     for (const record of this.records) {
+      if (record.archived) continue;
       const job = record.job;
       if (selected && !selected.has(job.id)) continue;
       const active = this.running.get(job.id);
@@ -318,7 +339,16 @@ export class TransferQueue {
         changed.push(record);
       }
     }
-    const removed = action === 'clear' ? this.records.filter(record => (!selected || selected.has(record.job.id)) && terminal.has(record.job.status) && !record.transaction && !this.running.has(record.job.id)).map(record => record.job.id) : [];
+    if (action === 'clear') {
+      for (const record of this.records) {
+        if (!record.archived && (!selected || selected.has(record.job.id)) && terminal.has(record.job.status) && record.transaction && !this.running.has(record.job.id)) {
+          // Hide the row, retaining durable recovery metadata and every on-disk artifact.
+          record.archived = true;
+          changed.push(record);
+        }
+      }
+    }
+    const removed = action === 'clear' ? this.records.filter(record => !record.archived && (!selected || selected.has(record.job.id)) && terminal.has(record.job.status) && !record.transaction && !this.running.has(record.job.id)).map(record => record.job.id) : [];
     if (removed.length) {
       // Completion snapshots feed renderer upload baselines: deliver them before removal.
       this.flushNotifications();
@@ -359,6 +389,7 @@ export class TransferQueue {
         for (const key of Object.keys(job)) delete (job as unknown as { [key: string]: unknown })[key];
         Object.assign(job, copy.job); Object.assign(record, copy, { job });
         if (!copy.transaction) delete record.transaction;
+        if (!copy.archived) delete record.archived;
         if (copy.readyAt === undefined) delete record.readyAt;
         return record;
       });
@@ -391,7 +422,7 @@ export class TransferQueue {
     if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
     const counts = new Map<string, number>();
     for (const record of this.records) if (this.running.has(record.job.id)) counts.set(record.job.connectionId, (counts.get(record.job.connectionId) ?? 0) + 1);
-    const waiting = this.records.filter(record => record.job.status === 'queued' && !this.running.has(record.job.id))
+    const waiting = this.records.filter(record => !record.archived && record.job.status === 'queued' && !this.running.has(record.job.id))
       .sort((a, b) => (b.job.priority ?? 50) - (a.job.priority ?? 50) || a.job.createdAt - b.job.createdAt);
     let next = Infinity;
     for (const record of waiting) {
@@ -432,7 +463,7 @@ export class TransferQueue {
       const endpoint = endpointIdentity(profile);
       if (!record.endpoint) throw new Conflict('Deze oudere overdracht heeft geen bevestigde verbindingsbestemming. Plan het bestand opnieuw in.');
       if (record.endpoint !== endpoint || job.expectedEndpoint !== undefined && job.expectedEndpoint !== endpoint) throw new Conflict('De verbindingsbestemming is sinds het inplannen gewijzigd. Controleer host, account, sleutel en hoofdmappen; plan daarna opnieuw in.');
-      localRoot = this.localRoot(job, profile.localRoot);
+      localRoot = await this.localRoot(job, profile.localRoot);
       localContained(localRoot, job.localPath);
       remoteContained(profile.remoteRoot, job.remotePath);
       if (!permitted(path.relative(localRoot, job.localPath), job.allowSensitive) || !permitted(path.posix.relative(profile.remoteRoot, job.remotePath), job.allowSensitive)) throw new UnsafePath('Dit pad is uitgesloten van overdracht.');

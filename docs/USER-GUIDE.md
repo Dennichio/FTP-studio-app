@@ -67,3 +67,9 @@ Projecten, instellingen, snippets, queue- en herstelgegevens staan lokaal in SQL
 ## Bekende grenzen
 
 De app is nog niet formeel gevalideerd op Windows. Beschikbaarheid van protocolspecifieke functies verschilt per server. Er is geen PHP-runtime, debugger, dependency manager, volledige page builder, remote delete-sync of hervatten vanaf transfer-offset. Test belangrijke wijzigingen eerst op een niet-productieomgeving.
+
+## Overdrachten in versie 1.0.1
+
+Navigeer links naar de gewenste lokale map; handmatige overdrachten zijn niet beperkt tot de lokale profielmap. Selecteer bestanden en klik op uploaden/downloaden. De wachtrij toont direct de voorbereiding. Grote selecties worden in groepen ingepland; reeds ingeplande bestanden kunnen al overdragen. Wanneer een latere groep mislukt, meldt de app hoeveel opdrachten al zijn ingepland.
+
+Gebruik bij een conflict de prullenbak **Uit wachtrij verwijderen**, of de centrale wisknop voor afgeronde opdrachten. Een conflict met herstelbestanden wordt uit de lijst verborgen, terwijl de herstelgegevens en betrokken bestanden behouden blijven. Deze actie verwijdert geen websitebestanden.

@@ -65,3 +65,11 @@ De rendererbundel vervangt Monaco's ingebouwde DOMPurify door de expliciete 3.4.
 ## Grote overdrachtslijsten en logboeken
 
 `QueuePanel` houdt de volledige gefilterde verzameling beschikbaar voor centrale acties en tellers, maar monteert alleen de zichtbare rijen, vijf extra rijen per kant en eventueel één gefocuste rij. `ResizeObserver` meet natuurlijke hoogtes zodat lange fout- en logteksten niet worden afgekapt. Meetgegevens zijn gekoppeld aan item-id, tekst en viewportbreedte. Een vooraf bewaarde scrollpositie ankert op dezelfde rij bij updates en herindeling; een remount bij filter- of tabwijziging begint bovenaan. Toetsenbordnavigatie kan niet-gemonteerde rijen bereiken. Er is geen extra runtimebibliotheek toegevoegd. Positieberekening en filtering blijven lineair in het aantal items; dit is DOM-virtualisatie, geen garantie van constante totale CPU-kosten.
+
+## Handmatige overdrachten en herstelconflicten (1.0.1)
+
+Handmatige bestandsacties geven `localRootOverride` mee: de op dat moment geopende lokale map. De wachtrij normaliseert en valideert deze bestaande absolute map, weigert symlinks/uitgesloten roots/cachemisbruik, beperkt alle nakomelingen tot deze map en bewaart de root in de opdracht. Uitvoering en retries controleren die root opnieuw. De serverroot en endpointcontroles blijven ongewijzigd. Projectfilters behouden binnen het project hun projectrelatieve paden; buiten het project gebruiken zij de expliciet gekozen overdrachtsmap.
+
+De renderer gebruikt de geladen serverlisting voor verwachte doelmetadata en bevestiging van overschrijven; de backend controleert de actuele doelmetadata opnieuw. Selecties worden in groepen van 16 items aangeboden. Een groep blijft transactioneel voorbereid, maar voorgaande groepen kunnen al overdragen. Een fout meldt hoeveel opdrachten eerder zijn ingepland. Dit versnelt de start van selecties met veel bestanden; de recursieve controle van één grote geselecteerde map blijft vooraf plaatsvinden.
+
+`clear` verwijdert gewone terminale opdrachten. Bij hersteltransacties bewaart het dezelfde volledige record met `archived: true`, verbergt die voor de UI en sluit haar uit van verdere planning en acties. Herstelbestanden worden niet verwijderd. Interne broncache-reconciliatie telt deze archieven mee, zodat geregistreerde herstelbronnen ook na herstart behouden blijven.

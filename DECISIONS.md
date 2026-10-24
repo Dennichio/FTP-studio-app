@@ -49,3 +49,11 @@ De bestandsvergelijking toont twee alleen-lezen momentopnamen. Zij verandert gee
 ## Wachtrijvirtualisatie met natuurlijke rijhoogtes — 10 oktober 2026
 
 Gekozen voor een lokale gevirtualiseerde lijst zonder nieuwe dependency. Vaste afgekorte rijen zouden volledige foutmeldingen verbergen; daarom worden natuurlijke rijhoogtes gemeten en in een cache bewaard. De volledige filterverzameling blijft de bron voor pauzeren/hervatten/wissen, onafhankelijk van de zichtbare DOM. Onafhankelijke A-review leidde tot herstel van achterblijvende focusverzoeken en scrollankering na hoogtekrimp. Echte Electron-tests met 2.000 SQLite-overdrachten en 2.000 werkelijke filesystemfouten slagen, inclusief filteracties, lange tekst, resize, focus en log-prepends. Dit verandert de overdrachtsengine niet.
+
+## 1.0.1 — gekozen lokale map, vroege start en verwijderbare conflicten
+
+De gebruiker wil expliciet buiten de lokale profielmap kunnen overdragen. Daarom krijgt een handmatige opdracht een eigen, duurzaam opgeslagen lokale root, in plaats van globale padvalidatie uit te schakelen of het verbindingsprofiel stil te wijzigen.
+
+De gebruiker meldde dat 1.400 foto's eerst langdurig metadata uitlezen zonder zichtbare overdracht. Een directe voorbereidingsstatus en batches van 16 geselecteerde items maken de start zichtbaar en laten eerdere batches al uitvoeren. Dubbele metadata-opvraging vanuit de renderer is vervangen door conservatieve verwachtingen uit de actuele listing; de engine behoudt de uiteindelijke conflictcontrole.
+
+De oude clear-regel weigerde conflicten met hersteltransacties en de rij-annuleerknop deed niets bij terminale conflicten. De rij krijgt nu een echte verwijderactie. Conflicten met herstelgegevens worden duurzaam gearchiveerd, zodat ze uit de wachtrij verdwijnen zonder dat gegevens worden weggegooid.

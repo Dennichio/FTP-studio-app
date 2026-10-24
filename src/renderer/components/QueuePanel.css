@@ -40,3 +40,5 @@
   min-width: 0;
   white-space: pre-wrap;
 }
+
+.queue-preparing { padding: 9px 14px; flex-shrink: 0; color: var(--text); background: var(--raised); border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.5; }

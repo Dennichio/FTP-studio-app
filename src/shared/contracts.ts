@@ -53,6 +53,7 @@ export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'fa
 export interface TransferRequest {
   connectionId: string; direction: 'upload' | 'download'; localPath: string; remotePath: string;
   priority?: number; expectedRemote?: FileSnapshot | null; expectedLocal?: FileSnapshot | null;
+  localRootOverride?: string;
   allowSensitive?: boolean; projectId?: string; expectedEndpoint?: string; overwriteExisting?: boolean;
 }
 export interface TransferJob extends TransferRequest {
@@ -132,7 +133,7 @@ export interface RemoteAccess {
   acquire(connectionId: string, purpose: 'navigation' | 'transfer', signal?: AbortSignal): Promise<SessionLease>;
 }
 export interface PersistedQueueRecord {
-  job: TransferJob; kind: 'file' | 'directory'; endpoint?: string; readyAt?: number;
+  job: TransferJob; kind: 'file' | 'directory'; endpoint?: string; readyAt?: number; archived?: boolean;
   transaction?: { stage: string; backup?: string; phase: 'prepared' | 'backed-up' | 'installed' };
 }
 export interface QueuePersistence {

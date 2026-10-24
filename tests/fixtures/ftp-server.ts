@@ -2,11 +2,11 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { posix } from 'node:path';
 
 /** A small real control/data server, intentionally only implementing commands exercised by these tests. */
-export async function ftpFixture(options: { stallDownload?: boolean; controlNoDelay?: boolean; supportsMlst?: boolean; advertiseMlst?: boolean } = {}) {
+export async function ftpFixture(options: { stallDownload?: boolean; controlNoDelay?: boolean; supportsMlst?: boolean; advertiseMlst?: boolean; beforeList?: (directory: string) => Promise<void>; beforeStat?: (target: string) => Promise<void> } = {}) {
   const files = new Map<string, Buffer>(); const advertisedSizes = new Map<string, number>(); const directories = new Set(['/']); const sockets = new Set<Socket>(); const passiveServers = new Set<Server>();
   const mlstResponses = new Map<string, string>(), commandCounts = new Map<string, number>();
   const chmodCalls: { path: string; mode: string }[] = [];
-  const fixture = { port: 0, files, advertisedSizes, directories, chmodCalls, mlstResponses, commandCounts, downloadStarted: false, close: async () => { for (const socket of sockets) socket.destroy(); await Promise.all([...passiveServers].map(server => new Promise<void>(resolve => server.close(() => resolve())))); await new Promise<void>(resolve => server.close(() => resolve())); } };
+  const fixture = { port: 0, files, advertisedSizes, directories, chmodCalls, mlstResponses, commandCounts, beforeStat: options.beforeStat, downloadStarted: false, close: async () => { for (const socket of sockets) socket.destroy(); await Promise.all([...passiveServers].map(server => new Promise<void>(resolve => server.close(() => resolve())))); await new Promise<void>(resolve => server.close(() => resolve())); } };
   const server = createServer(control => {
     // Opt-in benchmark control: preserve the original fixture's TCP behavior by default.
     if (options.controlNoDelay) control.setNoDelay(true);
@@ -40,6 +40,8 @@ export async function ftpFixture(options: { stallDownload?: boolean; controlNoDe
         case 'MLST': {
           if (!options.supportsMlst) { reply('502 Unsupported command'); break; }
           const target = path(arg), override = mlstResponses.get(target);
+          // Hold a real metadata response without replacing its eventual result.
+          await fixture.beforeStat?.(target);
           if (override !== undefined) { reply(override); break; }
           const bytes = files.get(target), directory = directories.has(target);
           if (!bytes && !directory) { reply('550 Missing file'); break; }
@@ -54,6 +56,8 @@ export async function ftpFixture(options: { stallDownload?: boolean; controlNoDe
         case 'PASV': await passive(false); break;
         case 'MLSD': case 'LIST': {
           const directory = path(arg || cwd); if (!directories.has(directory)) { reply('550 Missing directory'); break; }
+          // Tests may hold the real listing response to observe recursive preparation.
+          await options.beforeList?.(directory);
           await data(async socket => { const lines: string[] = []; for (const [file, bytes] of files) if (posix.dirname(file) === directory) lines.push(`type=file;size=${advertisedSizes.get(file) ?? bytes.length};modify=20260101000000; ${posix.basename(file)}`); for (const folder of directories) if (folder !== '/' && posix.dirname(folder) === directory) lines.push(`type=dir;size=0;modify=20260101000000; ${posix.basename(folder)}`); await new Promise<void>(resolve => socket.end(lines.join('\r\n') + (lines.length ? '\r\n' : ''), resolve)); }); break;
         }
         case 'STOR': case 'APPE': {

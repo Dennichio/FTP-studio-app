@@ -125,7 +125,7 @@ function VirtualQueueList<T extends VirtualItem>({items,label,contentKey,estimat
   </div>;
 }
 
-export function QueuePanel({jobs,logs,connections,expanded,onToggle,onAction,height,onHide,onMaximize,maximized}:{jobs:TransferJob[];logs:LogEntry[];connections:ConnectionState[];expanded:boolean;onToggle:()=>void;onAction:(action:'pause'|'resume'|'cancel'|'retry'|'clear'|'priority'|'raisePriority'|'lowerPriority',ids?:string[],priority?:number)=>void;height:number;onHide:()=>void;onMaximize:()=>void;maximized:boolean}) {
+export function QueuePanel({preparing,jobs,logs,connections,expanded,onToggle,onAction,height,onHide,onMaximize,maximized}:{preparing?:string;jobs:TransferJob[];logs:LogEntry[];connections:ConnectionState[];expanded:boolean;onToggle:()=>void;onAction:(action:'pause'|'resume'|'cancel'|'retry'|'clear'|'priority'|'raisePriority'|'lowerPriority',ids?:string[],priority?:number)=>void;height:number;onHide:()=>void;onMaximize:()=>void;maximized:boolean}) {
   const [tab,setTab]=useState('queue'),[filter,setFilter]=useState(''),[connectionFilter,setConnectionFilter]=useState('all'),[logLevel,setLogLevel]=useState('all');
   const connectionIds=useMemo(()=>[...new Set([...connections.map(c=>c.id),...jobs.map(j=>j.connectionId),...logs.flatMap(l=>l.connectionId?[l.connectionId]:[])])],[connections,jobs,logs]);
   const needle=filter.toLowerCase();
@@ -142,7 +142,7 @@ export function QueuePanel({jobs,logs,connections,expanded,onToggle,onAction,hei
     <div className="job-actions">
       {j.status==='paused'?<button className="icon-button" title="Hervatten" onClick={()=>onAction('resume',[j.id])}><Play size={13}/></button>:['running','queued'].includes(j.status)?<button className="icon-button" title="Pauzeren" onClick={()=>onAction('pause',[j.id])}><Pause size={13}/></button>:['failed','cancelled','conflict'].includes(j.status)?<button className="icon-button" title="Opnieuw proberen" onClick={()=>onAction('retry',[j.id])}><RotateCcw size={13}/></button>:null}
       {['queued','paused'].includes(j.status)&&<><button className="icon-button" title="Hogere prioriteit" disabled={(j.priority??50)>=100} onClick={()=>onAction('raisePriority',[j.id])}><ArrowUp size={13}/></button><button className="icon-button" title="Lagere prioriteit" disabled={(j.priority??50)<=0} onClick={()=>onAction('lowerPriority',[j.id])}><ArrowDown size={13}/></button></>}
-      {!['completed','cancelled'].includes(j.status)&&<button className="icon-button" title="Annuleren" onClick={()=>onAction('cancel',[j.id])}><X size={13}/></button>}
+      {['completed','cancelled','failed','conflict'].includes(j.status)?<button className="icon-button" title="Uit wachtrij verwijderen" onClick={()=>onAction('clear',[j.id])}><Trash2 size={13}/></button>:<button className="icon-button" title="Annuleren" onClick={()=>onAction('cancel',[j.id])}><X size={13}/></button>}
     </div>
   </div>;
   const renderLog=(l:LogEntry)=><div className={`log-row ${l.level}`} data-log-id={l.id}><time>{new Date(l.time).toLocaleTimeString('nl-NL')}</time><span>{l.level==='error'?'FOUT':l.level==='warning'?'LET OP':l.level==='debug'?'DEBUG':'INFO'}</span><p>{l.message}</p></div>;
@@ -150,7 +150,7 @@ export function QueuePanel({jobs,logs,connections,expanded,onToggle,onAction,hei
     <div className="queue-heading">
       <button className={`panel-tab ${tab==='queue'?'active':''}`} aria-pressed={tab==='queue'} onClick={()=>{setTab('queue');if(!expanded)onToggle();}}>Overdrachtswachtrij <span className="badge">{active.length}</span></button>
       <button className={`panel-tab ${tab==='logs'?'active':''}`} aria-pressed={tab==='logs'} onClick={()=>{setTab('logs');if(!expanded)onToggle();}}>Activiteitenlog <span className="badge">{filteredLogs.filter(l=>l.level==='error').length||''}</span></button>
-      <div className="spacer"/><span className="muted small">{completed>0&&`${completed} voltooid`}</span>
+      <div className="spacer"/>{preparing&&!expanded&&<span role="status">Overdracht voorbereiden…</span>}<span className="muted small">{completed>0&&`${completed} voltooid`}</span>
       <button className="icon-button" title="Getoonde overdrachten pauzeren" onClick={()=>onAction('pause',active.map(j=>j.id))} disabled={!active.length}><Pause size={13}/></button>
       <button className="icon-button" title="Getoonde overdrachten hervatten" onClick={()=>onAction('resume',filteredJobs.filter(j=>j.status==='paused').map(j=>j.id))} disabled={!filteredJobs.some(j=>j.status==='paused')}><Play size={13}/></button>
       <button className="icon-button" title="Afgeronde overdrachten wissen" onClick={()=>onAction('clear',filteredJobs.filter(j=>['completed','failed','cancelled','conflict'].includes(j.status)).map(j=>j.id))}><Trash2 size={13}/></button>
@@ -158,6 +158,7 @@ export function QueuePanel({jobs,logs,connections,expanded,onToggle,onAction,hei
       <button className="icon-button" title="Wachtrij verbergen" onClick={onHide}><X size={13}/></button>
       <button className="icon-button" title={expanded?'Paneel inklappen':'Paneel uitklappen'} onClick={onToggle}>{expanded?<ChevronDown size={15}/>:<ChevronUp size={15}/>}</button>
     </div>
+    {preparing&&expanded&&<div className="queue-preparing" role="status" aria-live="polite">{preparing}</div>}
     {expanded&&<><div className="queue-filter">
       <select aria-label="Wachtrijverbinding filteren" value={connectionFilter} onChange={e=>setConnectionFilter(e.target.value)}><option value="all">Alle verbindingen</option>{connectionIds.map(id=><option value={id} key={id}>{connections.find(c=>c.id===id)?.profile.name||id}</option>)}</select>
       {tab==='logs'&&<select aria-label="Logniveau filteren" value={logLevel} onChange={e=>setLogLevel(e.target.value)}><option value="all">Alle niveaus</option><option value="error">Fouten</option><option value="warning">Waarschuwingen</option><option value="info">Informatie</option><option value="debug">Debug</option></select>}

@@ -1,8 +1,8 @@
 # Voortgang
 
-## Huidige stand — 10 oktober 2026
+## Huidige stand — 24 oktober 2026
 
-De broncode is verder ontwikkeld na het Windows-checkpoint: wachtrij en activiteitenlog gebruiken nu virtualisatie met variabele rijhoogtes. **43/43 Electron/Xvfb-scenario’s geslaagd (2,0 min)**; na aanscherping van één focusassertie ook **3/3 gerichte wachtrijtests geslaagd (7,6 s)**. Typecheck en applicatiebuild slagen; onafhankelijke A-review akkoord. De eerdere volledige Vitest-run blijft **408/408**; backendcode is in deze ronde niet gewijzigd. De gedeelde Windows-ZIP hoort bij checkpoint `e5022c9` en bevat deze nieuwe virtualisatie nog niet. Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd; de volledige masterprompt is nog niet afgerond.
+Versie **1.0.1** bevat directe overdrachtsfeedback, batches van 16 geselecteerde items, handmatige overdrachten buiten de lokale profielmap en verwijderbare conflicten met behoud van herstelgegevens. Typecheck en build slagen. **420/420 backendtests** in de volledige ronde plus **3/3 aanvullende service-integratietests** slagen; de volledige Electron/Xvfb-ronde slaagt **51/51 (2,4 min)**. Onafhankelijke A-review akkoord. De zelfstandige Windows x64-ZIP is op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering is in deze omgeving niet getest. De volledige masterprompt blijft onafgerond.
 
 Netwerktoegang voor npm en Electron is opgelost via expliciete uitvoeringsgoedkeuring. Geen cloudmigratie nodig. De laatste ontwikkelronde omvat MLST-metadata, incrementele SQLite-queue, veilig remote aanmaken/kopiëren/verplaatsen, DOM-boom, externe CSS-patches, alleen-lezen bestandsdiff, instelbare kolommen en code/canvasverdeling. Nieuwere hersteltekst blijft bij opslaan behouden. De onafhankelijke A-reviews zijn akkoord; gerichte en volledige tests staan in TESTRESULTS.md.
 
@@ -73,3 +73,9 @@ De actuele Windows-ZIP is gedeeld voor de door de gebruiker gevraagde visuele ch
 De gebruiker kon de eerdere lokale artifactlink niet downloaden. De volledige ZIP overschreed de 100 MiB-grens van de Google Drive-uploadroute. Twee binaire delen zijn daarom naar het gekoppelde Drive-account geüpload en met metadata-readback gecontroleerd. Hun gezamenlijke SHA-256 is gelijk aan de oorspronkelijke ZIP. De gebruiker heeft bevestigd dat beide downloads werken. Samenvoeginstructies en links staan in [docs/DOWNLOAD.md](docs/DOWNLOAD.md). Het oorspronkelijke Windows-checkpoint blijft ongewijzigd.
 
 Alle voorgaande subagents waren klaar; er was geen nog lopende ontwikkeling of wachtende agent. Voor het vervolg zijn de bestaande contexten `file_columns` (B) en `integration_review` (A) hervat voor virtualisatie van wachtrij en activiteitenlog. De onafhankelijke review vond randgevallen in focusverzoeken en scrollankering bij gewijzigde rijhoogtes; beide zijn hersteld en de finale A-review is akkoord. De hoofdagent heeft typecheck/build, 43/43 volledige desktoptests en daarna 3/3 aangescherpte wachtrijtests succesvol uitgevoerd. De volledige masterprompt blijft open.
+
+## Reparatieversie 1.0.1 — 24 oktober 2026
+
+De gebruiker bevestigde dat mapdownloads na lang wachten toch starten, meldde niet-verwijderbare conflicten en vroeg overdrachten buiten de profielmap. De reparatie omvat zichtbare voorbereiding, 16-itembatches zonder dubbele renderer-statlus, een eigen gevalideerde lokale root per handmatige opdracht, en duurzaam archiveren van conflicten met herstelgegevens.
+
+A-agent `transfer_roots` implementeerde queue/veiligheidsregressies; B-agent `download_tests` schreef echte FTP/Electron-tests; onafhankelijke A-agent `download_review` reviewde code en tests en voegde service-integratiedekking toe. De hoofdagent integreerde renderer/types/service, voerde tests/builds uit en stelde de Windows-ZIP samen. Resultaten: 420/420 volledige backendrun, 3/3 aanvullende servicecases, 51/51 volledige desktoprun. Windows-uitvoering niet beschikbaar.

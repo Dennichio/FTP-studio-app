@@ -111,6 +111,7 @@ export class StudioService {
           filterEntry = { ...entry, name: path.posix.basename(request.remotePath), path: request.remotePath };
         } else {
           relative = path.relative(project.localRoot, request.localPath).split(path.sep).join('/');
+          if (request.localRootOverride && (relative === '..' || relative.startsWith('../') || path.isAbsolute(relative))) relative = path.relative(request.localRootOverride, request.localPath).split(path.sep).join('/');
           if (relative === '..' || relative.startsWith('../') || path.isAbsolute(relative)) return false;
         }
       } else { const mapped = remoteRelative(); if (mapped === undefined) return false; relative = mapped; }
@@ -119,7 +120,7 @@ export class StudioService {
     }, { trustedCacheRoot: this.cacheRoot });
     // Restored jobs never start automatically. Keep every retryable source, and
     // remove only registered completed/orphaned sources left by an interrupted setup.
-    const retained = new Set(this.queue.jobs().filter(job => job.status !== 'completed').map(job => job.localPath));
+    const retained = new Set(this.queue.jobs(true).filter(job => job.status !== 'completed').map(job => job.localPath));
     this.actionSourceReconciliation = (async () => {
       for (const source of sources) if (!retained.has(source)) {
         try { await this.releaseActionSource(source); }
@@ -442,6 +443,7 @@ export class StudioService {
       case 'enqueue': {
         if (!Array.isArray(a.requests) || a.requests.length > 100000) throw new Error('Ongeldige overdrachtslijst.');
         for (const request of a.requests as TransferRequest[]) {
+          if (request.localRootOverride !== undefined) text(request.localRootOverride, 'Lokale overdrachtsmap');
           const cacheRelative = path.relative(this.cacheRoot, path.resolve(text(request.localPath, 'Lokaal overdrachtspad')));
           if (cacheRelative !== '..' && !cacheRelative.startsWith(`..${path.sep}`) && !path.isAbsolute(cacheRelative)) {
             const document = [...this.documents.values()].find(d => d.path === path.resolve(request.localPath) && d.remote?.connectionId === request.connectionId && d.remote.path === request.remotePath);
@@ -469,7 +471,7 @@ export class StudioService {
       case 'queueAction': {
         const before = a.action === 'clear' ? this.queue.jobs() : [];
         await this.queue.action(a.action, a.ids, a.priority);
-        const remaining = new Set(this.queue.jobs().map(job => job.localPath));
+        const remaining = new Set(this.queue.jobs(true).map(job => job.localPath));
         for (const job of before) if (!remaining.has(job.localPath)) await this.releaseActionSource(job.localPath);
         break;
       }

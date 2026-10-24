@@ -573,8 +573,10 @@ describe('TransferQueue', () => {
     expect(restored.jobs()[0].status).toBe('conflict'); expect(restored.jobs()[0].error).toContain('.original.backup');
     expect(f.remote.calls).toHaveLength(calls);
     await restored.action('clear');
-    expect(restored.jobs()).toHaveLength(1);
-    expect(restored.jobs()[0].error).toContain('.original.backup');
+    expect(restored.jobs()).toHaveLength(0);
+    const archived = f.store.get<Array<{archived?:boolean;transaction?:{backup?:string}}>>('transferQueue.v1', []);
+    expect(archived[0].archived).toBe(true);
+    expect(archived[0].transaction?.backup).toBe('/site/.original.backup');
   });
 
   it('does not retransmit when a post-completion hook fails', async () => {

@@ -2,7 +2,7 @@
 
 Doelplatform: Windows 11 x64. Deze distributie bevat Electron, de applicatie en alle editorassets; Node.js, .NET en een aparte browserruntime hoeven niet te worden geïnstalleerd.
 
-1. Download `FTP-Studio-1.0.0-win-x64.zip` en pak de **hele ZIP** uit in een eigen map, bijvoorbeeld `C:\Apps\FTP Studio`.
+1. Download `FTP-Studio-1.0.1-win-x64.zip` en pak de **hele ZIP** uit in een eigen map, bijvoorbeeld `C:\Apps\FTP Studio`.
 2. Start `FTP Studio.exe` uit die map. Laat de meegeleverde DLL's, `resources` en `locales` bij het programma staan.
 3. Open **Project → Nieuw project** en kies uw lokale websitemap. Voeg via **Verbindingsbeheer** een FTP-, FTPS- of SFTP-profiel toe en stel de serverhoofdmap in.
 4. Dubbelklik op een bestand om het te bewerken. Gebruik **Opslaan** voor lokale opslag en **Opslaan en uploaden** om een gecontroleerde overdracht in te plannen.

@@ -1,6 +1,6 @@
 # FTP Studio — functionele specificatie
 
-**Status:** De broncode is verder ontwikkeld na het Windows-checkpoint: wachtrij en activiteitenlog gebruiken nu virtualisatie met variabele rijhoogtes. **43/43 Electron/Xvfb-scenario’s geslaagd (2,0 min)**; na aanscherping van één focusassertie ook **3/3 gerichte wachtrijtests geslaagd (7,6 s)**. Typecheck en applicatiebuild slagen; onafhankelijke A-review akkoord. De eerdere volledige Vitest-run blijft **408/408**; backendcode is in deze ronde niet gewijzigd. De gedeelde Windows-ZIP hoort bij checkpoint `e5022c9` en bevat deze nieuwe virtualisatie nog niet. Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd; de volledige masterprompt is nog niet afgerond.
+**Status:** Versie **1.0.1** bevat directe overdrachtsfeedback, batches van 16 geselecteerde items, handmatige overdrachten buiten de lokale profielmap en verwijderbare conflicten met behoud van herstelgegevens. Typecheck en build slagen. **420/420 backendtests** in de volledige ronde plus **3/3 aanvullende service-integratietests** slagen; de volledige Electron/Xvfb-ronde slaagt **51/51 (2,4 min)**. Onafhankelijke A-review akkoord. De zelfstandige Windows x64-ZIP is op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering is in deze omgeving niet getest. De volledige masterprompt blijft onafgerond.
 
 ## Doel en doelgroep
 
@@ -34,7 +34,7 @@ De primaire interface en meldingen zijn Nederlandstalig. De applicatie is gebouw
 
 ## Veilige overdrachtsregels
 
-Padtoegang blijft binnen de ingestelde project-/verbindingsroots. Symlinks, padontsnapping en onveilige bestandsnamen worden geweigerd. Veelvoorkomende geheimen (`.env`, SSH-sleutels, credentials, certificaat-/keybestanden en vergelijkbare namen) en ontwikkelmappen zoals `.git` en `node_modules` zijn standaard uitgesloten van bulkoverdracht/publicatie. De wachtrij valideert overdrachten opnieuw. Conflict, ontbrekende betrouwbare metadata of wijziging sinds de planning vraagt om handmatige controle in plaats van stil overschrijven.
+Padtoegang blijft binnen de ingestelde roots. Handmatige overdrachten mogen sinds 1.0.1 een expliciet gekozen lokale overdrachtsmap buiten de profielroot gebruiken; de opdracht blijft tot die gekozen map begrensd. Symlinks, padontsnapping en onveilige bestandsnamen worden geweigerd. Veelvoorkomende geheimen (`.env`, SSH-sleutels, credentials, certificaat-/keybestanden en vergelijkbare namen) en ontwikkelmappen zoals `.git` en `node_modules` zijn standaard uitgesloten van bulkoverdracht/publicatie. De wachtrij valideert overdrachten opnieuw. Conflict, ontbrekende betrouwbare metadata of wijziging sinds de planning vraagt om handmatige controle in plaats van stil overschrijven.
 
 Automatisch uploaden na lokaal opslaan is optioneel en gebruikt dezelfde conflictcontroles en wachtrij. Schakel deze instelling bewust in en gebruik haar alleen met een gecontroleerde actieve verbinding.
 

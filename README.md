@@ -6,9 +6,9 @@ De applicatie biedt een beperkte bronbewuste HTML/CSS-inspector. Ze is geen voll
 
 ## Status
 
-De huidige build is op Linux gecompileerd en gecontroleerd: **408/408 Vitest-tests in 19 suites (63,29 s)**. De uitgebreide Electron/Xvfb-ronde haalde **38/40**; na herstel van de labels in het vergelijkingsvenster slaagden **alle vijf betreffende scenario’s (20,1 s)**. De overige 35 scenario’s waren geslaagd. Dit is geen nieuwe volledige 40/40-run. Typecheck en applicatiebuild zijn groen. De actuele Windows x64 ZIP is samengesteld en op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering, DPI en DPAPI blijven ongeverifieerd. De volledige masterprompt is nog niet afgerond.
+Versie **1.0.1** bevat directe overdrachtsfeedback, batches van 16 geselecteerde items, handmatige overdrachten buiten de lokale profielmap en verwijderbare conflicten met behoud van herstelgegevens. Typecheck en build slagen. **420/420 backendtests** in de volledige ronde plus **3/3 aanvullende service-integratietests** slagen; de volledige Electron/Xvfb-ronde slaagt **51/51 (2,4 min)**. Onafhankelijke A-review akkoord. De zelfstandige Windows x64-ZIP is op inhoud, CRC en SHA-256 gecontroleerd; Windows-uitvoering is in deze omgeving niet getest. De volledige masterprompt blijft onafgerond.
 
-De distributie staat onder `release/FTP-Studio-1.0.0-win-x64.zip`. Pak de hele ZIP uit en start `FTP Studio.exe`; zie [Windows-installatie](docs/INSTALLATIE-WINDOWS.md). Broncode en overdrachtsarchief staan onder `artifacts/`. Beide loopback-benchmarkmatrices zijn afgerond: elk 16 scenario’s en 8.128 gecontroleerde bestanden. Zie [benchmarkrapport](docs/BENCHMARKS.md), [testresultaten](TESTRESULTS.md) en [resterende eisen](SPECIFICATION.md).
+De distributie staat onder `release/FTP-Studio-1.0.1-win-x64.zip`. Pak de hele ZIP uit en start `FTP Studio.exe`; zie [Windows-installatie](docs/INSTALLATIE-WINDOWS.md). Broncode en overdrachtsarchief staan onder `artifacts/`. Beide loopback-benchmarkmatrices zijn afgerond: elk 16 scenario’s en 8.128 gecontroleerde bestanden. Zie [benchmarkrapport](docs/BENCHMARKS.md), [testresultaten](TESTRESULTS.md) en [resterende eisen](SPECIFICATION.md).
 
 ## Ontwikkelen
 

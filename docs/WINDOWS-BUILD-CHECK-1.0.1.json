@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-10-24T21:30:03.917Z",
+  "platform": "Windows x64 PE, cross-built on Linux; not executed on Windows",
+  "version": "1.0.1",
+  "asarEntries": 6148,
+  "comparedBuildFiles": 16,
+  "nativeAddons": 0,
+  "asarSha256": "56e3f8feaf59f7052709a08bd8d0b485be29bfab965181caede45933a07ebfd7",
+  "zip": "FTP-Studio-1.0.1-win-x64.zip",
+  "zipBytes": 162807805,
+  "zipSha256": "bbeb85dd2ae1581f72495a4aef9e6e9c88cae7dd41c067f14ee60a9673ddbcf8",
+  "zipCrc": "all entries passed"
+}

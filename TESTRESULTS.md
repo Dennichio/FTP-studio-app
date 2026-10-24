@@ -116,3 +116,13 @@ Het definitieve Windows-archief is 162.798.357 bytes. SHA-256: `1abf46b57a49885f
 - De vorige 408/408 Vitest-resultaten blijven van het eerdere checkpoint; backend en protocollen zijn in deze ronde niet gewijzigd en niet opnieuw volledig getest.
 - De gedeelde Windows-ZIP is ongewijzigd en bevat de nieuwe virtualisatie niet. Deze resultaten betreffen Linux/Electron, niet Windows.
 - Beide Drive-downloads zijn na upload via metadata gecontroleerd en de gebruiker bevestigt dat downloaden werkt. De samengevoegde SHA-256 komt overeen met de oorspronkelijke ZIP. Zie docs/DOWNLOAD.md.
+
+## Versie 1.0.1 — 24 oktober 2026
+
+- Volledige Vitest-run: **420/420**, 20 suites, 59,70 seconden.
+- Aanvullende `manualTransfers-service.test.ts`: **3/3**, 3,23 seconden; echte FTP-projectfilters en SQLite-herstelbronnen. Deze suite is na de volledige ronde toegevoegd en apart uitgevoerd.
+- Volledige Electron/Xvfb-run: **51/51**, 2,4 minuten.
+- Typecheck, build, onafhankelijke A-review en `git diff --check`: geslaagd.
+- Nieuwe controles: upload/download buiten lokale profielroot; mapvoorbereiding zichtbaar vóór serverlisting gereed is; geen dubbele opdrachten; uitgesloten selectie gemeld; 33 geselecteerde foto's ontvangen via echte FTP terwijl laatste metadata-aanvraag nog wacht; latere groepsfout behoudt eerder ingeplande bestanden en bestaand doel; rij/bulkconflictverwijdering plus herstart bewaart echte lokale en remote herstelbestanden.
+- Geen snelheidstest met 1.400 foto's op de gebruikersserver uitgevoerd; de vroege start is functioneel bewezen met 33 foto's en een vertraagde laatste metadata-aanvraag.
+- Windows 1.0.1 cross-build: AMD64-PE, 6.148 asar-items, geen native addons; 16 buildbestanden bytegelijk gecontroleerd. ZIP-CRC en SHA-256 geslaagd; zie `docs/WINDOWS-BUILD-CHECK-1.0.1.json`. Windows-runtime/DPI/DPAPI niet opnieuw geverifieerd.

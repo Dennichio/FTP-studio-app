@@ -1,8 +1,8 @@
 {
   "name": "ftp-studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
-  "description": "Geïntegreerde Windows-werkplek voor webontwikkeling en veilige bestandsoverdracht",
+  "description": "Ge\u00efntegreerde Windows-werkplek voor webontwikkeling en veilige bestandsoverdracht",
   "author": "FTP Studio",
   "license": "MIT",
   "main": "dist/main/main.cjs",
